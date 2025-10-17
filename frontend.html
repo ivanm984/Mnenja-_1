@@ -507,15 +507,17 @@
         }
 
         .key-field label {
-            color: var(--muted);
-            font-size: 0.85rem;
-            letter-spacing: 0.04em;
-            text-transform: uppercase; /* Uppercase labels to match metadata */
+            color: rgba(15, 23, 42, 0.82);
+            font-size: 0.95rem;
+            letter-spacing: 0.01em;
+            text-transform: none;
         }
 
         .key-field textarea {
             min-height: 80px; /* Base height, will grow dynamically */
             height: auto; /* Allow dynamic height */
+            font-size: 1rem;
+            line-height: 1.55;
         }
 
         .metadata-grid {
@@ -700,6 +702,115 @@
         }
 
         .analysis-empty {
+            color: rgba(15, 23, 42, 0.6);
+            font-style: italic;
+        }
+
+        .table-controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .table-controls .control {
+            display: grid;
+            gap: 6px;
+        }
+
+        .table-controls .control span {
+            font-size: 0.86rem;
+            color: var(--muted);
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+
+        .table-controls select {
+            min-width: 220px;
+        }
+
+        .requirement-cell {
+            display: grid;
+            gap: 10px;
+        }
+
+        .requirement-toggle {
+            background: transparent;
+            border: none;
+            padding: 0;
+            margin: 0;
+            width: 100%;
+            text-align: left;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 12px;
+            cursor: pointer;
+            color: inherit;
+        }
+
+        .requirement-toggle:focus-visible {
+            outline: 2px solid rgba(37, 99, 235, 0.4);
+            outline-offset: 4px;
+        }
+
+        .requirement-title {
+            display: grid;
+            gap: 6px;
+        }
+
+        .requirement-name {
+            font-size: 1.02rem;
+            font-weight: 600;
+        }
+
+        .requirement-meta {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            color: var(--muted);
+            font-size: 0.88rem;
+        }
+
+        .requirement-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.84rem;
+            font-weight: 600;
+            color: var(--primary);
+            white-space: nowrap;
+        }
+
+        .requirement-indicator svg {
+            transition: transform 0.2s ease;
+        }
+
+        .requirement-indicator.expanded svg {
+            transform: rotate(180deg);
+        }
+
+        .requirement-body {
+            background: rgba(37, 99, 235, 0.05);
+            border-radius: 12px;
+            padding: 12px 14px;
+            border: 1px solid rgba(37, 99, 235, 0.12);
+            display: grid;
+            gap: 6px;
+        }
+
+        .requirement-body strong {
+            font-size: 0.88rem;
+            color: rgba(15, 23, 42, 0.7);
+        }
+
+        .requirement-text {
+            white-space: pre-line;
+            line-height: 1.6;
+        }
+
+        .requirement-empty {
             color: rgba(15, 23, 42, 0.6);
             font-style: italic;
         }
@@ -1067,6 +1178,19 @@
 
             <div class="section-layout">
                 <div class="section-main">
+                    <div class="table-controls" v-if="requirements.length">
+                        <div class="control">
+                            <span>Razvrsti zahteve</span>
+                            <select v-model="sortOption">
+                                <option v-for="option in requirementSortOptions" :key="option.value" :value="option.value">
+                                    {{ option.label }}
+                                </option>
+                            </select>
+                        </div>
+                        <button class="btn btn-outline" type="button" @click="toggleAllRequirementBodies" :disabled="!requirements.length">
+                            {{ allRequirementsExpanded ? 'Skrij vsa besedila' : 'Prikaži vsa besedila' }}
+                        </button>
+                    </div>
                     <div class="results-table">
                         <table>
                             <thead>
@@ -1078,17 +1202,38 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr v-for="req in requirements" :key="req.id" :class="{ excluded: excludedIds.includes(String(req.id)) }">
+                                <tr v-for="req in sortedRequirements" :key="req.id" :class="{ excluded: excludedIds.includes(String(req.id)) }">
                                     <td>
                                         <input type="checkbox" :value="String(req.id)" v-model="selectedRequirementIds" :disabled="excludedIds.includes(String(req.id))" />
                                     </td>
                                     <td>
-                                        <strong>{{ req.naziv || req.naslov || 'Zahteva' }}</strong>
-                                        <div class="subtitle" v-if="req.clen">{{ req.clen }}</div>
-                                        <div class="subtitle" v-if="req.skupina || req.kategorija">{{ req.skupina || req.kategorija }}</div>
-                                        <button class="btn btn-secondary" style="margin-top:8px;" @click="toggleRequirementExclusion(req.id)">
-                                            {{ excludedIds.includes(String(req.id)) ? 'Vključi v poročilo' : 'Izloči iz končnega poročila' }}
-                                        </button>
+                                        <div class="requirement-cell">
+                                            <button class="requirement-toggle" type="button" @click="toggleRequirementBody(req.id)" :aria-expanded="isRequirementExpanded(req.id)" :aria-controls="`requirement-body-${stringId(req.id)}`">
+                                                <div class="requirement-title">
+                                                    <span class="requirement-name">{{ req.naziv || req.naslov || 'Zahteva' }}</span>
+                                                    <div class="requirement-meta" v-if="req.clen || req.skupina || req.kategorija">
+                                                        <span v-if="req.clen">{{ req.clen }}</span>
+                                                        <span v-if="req.skupina || req.kategorija">{{ req.skupina || req.kategorija }}</span>
+                                                    </div>
+                                                </div>
+                                                <span class="requirement-indicator" :class="{ expanded: isRequirementExpanded(req.id) }">
+                                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                        <path d="M3.2 6.2L8 11l4.8-4.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                                                    </svg>
+                                                    {{ isRequirementExpanded(req.id) ? 'Skrij besedilo' : 'Prikaži besedilo' }}
+                                                </span>
+                                            </button>
+                                            <transition name="fade">
+                                                <div v-if="isRequirementExpanded(req.id)" class="requirement-body" :id="`requirement-body-${stringId(req.id)}`">
+                                                    <strong>Besedilo zahteve</strong>
+                                                    <div v-if="req.besedilo" class="requirement-text">{{ req.besedilo }}</div>
+                                                    <div v-else class="requirement-empty">Ni dodatnega besedila.</div>
+                                                </div>
+                                            </transition>
+                                            <button class="btn btn-secondary" style="margin-top:4px;" @click="toggleRequirementExclusion(req.id)">
+                                                {{ excludedIds.includes(String(req.id)) ? 'Vključi v poročilo' : 'Izloči iz končnega poročila' }}
+                                            </button>
+                                        </div>
                                     </td>
                                     <td class="status-cell">
                                         <div class="status-control">
@@ -1228,6 +1373,12 @@
                         { value: 'Neskladno', label: 'NESKLADNA' },
                         { value: 'Ni relevantno', label: 'NI RELEVANTNO' }
                     ],
+                    requirementSortOptions: [
+                        { value: 'default', label: 'Izvirni vrstni red' },
+                        { value: 'status-desc', label: 'Neskladne najprej' },
+                        { value: 'status-asc', label: 'Skladne najprej' }
+                    ],
+                    sortOption: 'default',
                     statusLabels: {
                         '': 'NEZNANO', Neznano: 'NEZNANO', neznano: 'NEZNANO',
                         Skladno: 'SKLADNA', skladno: 'SKLADNA',
@@ -1236,6 +1387,7 @@
                     },
                     actionStates: { extract: '', run: '', save: '', reset: '', rerunSelected: '', rerunNonCompliant: '', confirm: '', revision: '' },
                     actionTimers: {},
+                    expandedRequirementIds: [],
                     heroSteps: [
                         { id: 1, title: 'Naloži dokumente', description: 'Dodajte PDF dokumentacijo.' },
                         { id: 2, title: 'Preglej osnutek', description: 'AI pripravi osnutek podatkov.' },
@@ -1259,7 +1411,31 @@
             computed: {
                 keyFieldList() { return Object.entries(this.keyLabels).map(([key, label]) => ({ key, label })); },
                 heroActiveStep() { if (Array.isArray(this.requirements) && this.requirements.length) return 3; if (this.showReview) return 2; return 1; },
-                showReview() { return !!this.sessionId && this.eupPairs.length > 0; }
+                showReview() { return !!this.sessionId && this.eupPairs.length > 0; },
+                sortedRequirements() {
+                    const list = Array.isArray(this.requirements) ? this.requirements : [];
+                    if (this.sortOption === 'default') return list;
+                    const items = list.map((req, index) => ({ req, index }));
+                    const comparator = (a, b) => {
+                        const weightA = this.statusWeight(this.currentStatus(a.req.id));
+                        const weightB = this.statusWeight(this.currentStatus(b.req.id));
+                        if (this.sortOption === 'status-desc') {
+                            if (weightA !== weightB) return weightB - weightA;
+                        } else if (this.sortOption === 'status-asc') {
+                            if (weightA !== weightB) return weightA - weightB;
+                        }
+                        return a.index - b.index;
+                    };
+                    return items.sort(comparator).map(item => item.req);
+                },
+                allRequirementsExpanded() {
+                    const list = Array.isArray(this.requirements) ? this.requirements : [];
+                    if (!list.length) return false;
+                    return list.every(req => this.isRequirementExpanded(req.id));
+                }
+            },
+            watch: {
+                sortOption() { this.persistState(true); }
             },
             methods: {
                 heroStepClass(stepId) { const active = this.heroActiveStep; return { active: stepId === active, completed: stepId < active }; },
@@ -1388,7 +1564,7 @@
                         this.sessionId = data.session_id;
                         this.preparePairs(data.eup, data.namenska_raba);
                         this.prepareKeyData(data);
-                        this.requirements = []; this.resultsMap = {}; this.prepareEditableResults();
+                        this.requirements = []; this.resultsMap = {}; this.expandedRequirementIds = []; this.prepareEditableResults();
                         this.persistState(true);
                         this.markActionResult('extract', 'success');
                         this.stopLoading('success', 'Ekstrakcija uspešna. Preglejte predloge in nadaljujte.');
@@ -1444,6 +1620,7 @@
                         const result = await response.json();
                         this.resultsMap = this.normalizeResultsMap(result.results_map || {});
                         this.requirements = Array.isArray(result.zahteve) ? result.zahteve : [];
+                        this.syncExpandedRequirements();
                         this.prepareEditableResults();
                         this.requirementRevisions = result.requirement_revisions || {};
                         this.latestNonCompliantIds = this.computeNonCompliantIds();
@@ -1467,6 +1644,13 @@
                     const nonCompliant = this.latestNonCompliantIds.length;
                     return `Analiziranih ${total} zahtev. Neskladnih: ${nonCompliant}.`;
                 },
+                statusWeight(value) {
+                    const normalized = (value || '').toLowerCase();
+                    if (normalized.includes('nesklad')) return 3;
+                    if (normalized.includes('ni relevantno')) return 2;
+                    if (normalized.includes('sklad')) return 1;
+                    return 0;
+                },
                 statusClass(text) {
                     if (!text) return 'neznano'; const normalized = text.toLowerCase();
                     if (normalized.includes('nesklad')) return 'neskladno';
@@ -1476,6 +1660,34 @@
                 },
                 currentStatus(id) { return this.resultsMap[this.stringId(id)]?.skladnost || ''; },
                 displayStatus(id) { const status = this.currentStatus(id); return this.statusLabels[status] || status || 'NEZNANO'; },
+                isRequirementExpanded(id) { return this.expandedRequirementIds.includes(this.stringId(id)); },
+                toggleRequirementBody(id) {
+                    const key = this.stringId(id);
+                    if (!key) return;
+                    if (this.expandedRequirementIds.includes(key)) {
+                        this.expandedRequirementIds = this.expandedRequirementIds.filter(item => item !== key);
+                    } else {
+                        this.expandedRequirementIds = [...this.expandedRequirementIds, key];
+                    }
+                    this.persistState(true);
+                },
+                toggleAllRequirementBodies() {
+                    if (!Array.isArray(this.requirements) || !this.requirements.length) return;
+                    if (this.allRequirementsExpanded) {
+                        this.expandedRequirementIds = [];
+                    } else {
+                        this.expandedRequirementIds = this.requirements.map(req => this.stringId(req.id)).filter(Boolean);
+                    }
+                    this.persistState(true);
+                },
+                syncExpandedRequirements() {
+                    if (!Array.isArray(this.requirements)) {
+                        this.expandedRequirementIds = [];
+                        return;
+                    }
+                    const allowed = new Set(this.requirements.map(req => this.stringId(req.id)).filter(Boolean));
+                    this.expandedRequirementIds = this.expandedRequirementIds.filter(id => allowed.has(id));
+                },
                 updateRequirementStatus(id, value) {
                     this.ensureResultEntry(id).skladnost = value;
                     this.latestNonCompliantIds = this.computeNonCompliantIds();
@@ -1521,7 +1733,9 @@
                         initialEditableActions: this.initialEditableActions, selectedRequirementIds: this.selectedRequirementIds,
                         excludedIds: this.excludedIds, requirementRevisions: this.requirementRevisions,
                         latestNonCompliantIds: this.latestNonCompliantIds, analysisSummary: this.analysisSummary,
-                        downloadReady: this.downloadReady, revisionInfo: this.revisionInfo, timestamp: new Date().toISOString()
+                        downloadReady: this.downloadReady, revisionInfo: this.revisionInfo,
+                        sortOption: this.sortOption, expandedRequirementIds: this.expandedRequirementIds,
+                        timestamp: new Date().toISOString()
                     };
                 },
                 persistState(auto = false) {
@@ -1532,7 +1746,10 @@
                     try {
                         const raw = localStorage.getItem(this.storageKey); if (!raw) return;
                         const state = JSON.parse(raw); if (!state || !state.sessionId) return;
-                        Object.keys(state).forEach(key => this[key] = state[key]);
+                        Object.keys(state).forEach(key => { this[key] = state[key]; });
+                        if (!Array.isArray(this.expandedRequirementIds)) this.expandedRequirementIds = [];
+                        if (!this.sortOption) this.sortOption = 'default';
+                        this.syncExpandedRequirements();
                         this.setStatus('success', 'Obnovljena je bila lokalno shranjena seja.');
                         this.highlightedSession = { ...state, source: 'local' };
                     } catch (error) { console.warn('Ni mogoče obnoviti seje:', error); }
