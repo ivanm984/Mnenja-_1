@@ -641,7 +641,9 @@
         }
 
         .analysis-section div {
-            white-space: pre-line;
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow-wrap: anywhere;
         }
 
         .analysis-hint {
@@ -732,27 +734,12 @@
 
         .requirement-cell {
             display: grid;
-            gap: 10px;
-        }
-
-        .requirement-toggle {
-            background: transparent;
-            border: none;
-            padding: 0;
-            margin: 0;
-            width: 100%;
-            text-align: left;
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
             gap: 12px;
-            cursor: pointer;
-            color: inherit;
         }
 
-        .requirement-toggle:focus-visible {
-            outline: 2px solid rgba(37, 99, 235, 0.4);
-            outline-offset: 4px;
+        .requirement-header {
+            display: grid;
+            gap: 6px;
         }
 
         .requirement-title {
@@ -773,24 +760,6 @@
             font-size: 0.88rem;
         }
 
-        .requirement-indicator {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 0.84rem;
-            font-weight: 600;
-            color: var(--primary);
-            white-space: nowrap;
-        }
-
-        .requirement-indicator svg {
-            transition: transform 0.2s ease;
-        }
-
-        .requirement-indicator.expanded svg {
-            transform: rotate(180deg);
-        }
-
         .requirement-body {
             background: rgba(37, 99, 235, 0.05);
             border-radius: 12px;
@@ -806,8 +775,10 @@
         }
 
         .requirement-text {
-            white-space: pre-line;
+            white-space: pre-wrap;
             line-height: 1.6;
+            word-break: break-word;
+            overflow-wrap: anywhere;
         }
 
         .requirement-empty {
@@ -894,6 +865,7 @@
         .section-main {
             display: grid;
             gap: 32px;
+            min-width: 0;
         }
 
         .section-sidebar {
@@ -1187,9 +1159,6 @@
                                 </option>
                             </select>
                         </div>
-                        <button class="btn btn-outline" type="button" @click="toggleAllRequirementBodies" :disabled="!requirements.length">
-                            {{ allRequirementsExpanded ? 'Skrij vsa besedila' : 'Prikaži vsa besedila' }}
-                        </button>
                     </div>
                     <div class="results-table">
                         <table>
@@ -1208,7 +1177,7 @@
                                     </td>
                                     <td>
                                         <div class="requirement-cell">
-                                            <button class="requirement-toggle" type="button" @click="toggleRequirementBody(req.id)" :aria-expanded="isRequirementExpanded(req.id)" :aria-controls="`requirement-body-${stringId(req.id)}`">
+                                            <div class="requirement-header">
                                                 <div class="requirement-title">
                                                     <span class="requirement-name">{{ req.naziv || req.naslov || 'Zahteva' }}</span>
                                                     <div class="requirement-meta" v-if="req.clen || req.skupina || req.kategorija">
@@ -1216,20 +1185,12 @@
                                                         <span v-if="req.skupina || req.kategorija">{{ req.skupina || req.kategorija }}</span>
                                                     </div>
                                                 </div>
-                                                <span class="requirement-indicator" :class="{ expanded: isRequirementExpanded(req.id) }">
-                                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                                        <path d="M3.2 6.2L8 11l4.8-4.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-                                                    </svg>
-                                                    {{ isRequirementExpanded(req.id) ? 'Skrij besedilo' : 'Prikaži besedilo' }}
-                                                </span>
-                                            </button>
-                                            <transition name="fade">
-                                                <div v-if="isRequirementExpanded(req.id)" class="requirement-body" :id="`requirement-body-${stringId(req.id)}`">
-                                                    <strong>Besedilo zahteve</strong>
-                                                    <div v-if="req.besedilo" class="requirement-text">{{ req.besedilo }}</div>
-                                                    <div v-else class="requirement-empty">Ni dodatnega besedila.</div>
-                                                </div>
-                                            </transition>
+                                            </div>
+                                            <div class="requirement-body" :id="`requirement-body-${stringId(req.id)}`">
+                                                <strong>Besedilo zahteve</strong>
+                                                <div v-if="req.besedilo" class="requirement-text">{{ req.besedilo }}</div>
+                                                <div v-else class="requirement-empty">Ni dodatnega besedila.</div>
+                                            </div>
                                             <button class="btn btn-secondary" style="margin-top:4px;" @click="toggleRequirementExclusion(req.id)">
                                                 {{ excludedIds.includes(String(req.id)) ? 'Vključi v poročilo' : 'Izloči iz končnega poročila' }}
                                             </button>
@@ -1416,7 +1377,6 @@
                     },
                     actionStates: { extract: '', run: '', save: '', reset: '', rerunSelected: '', rerunNonCompliant: '', confirm: '', revision: '' },
                     actionTimers: {},
-                    expandedRequirementIds: [],
                     heroSteps: [
                         { id: 1, title: 'Naloži dokumente', description: 'Dodajte PDF dokumentacijo.' },
                         { id: 2, title: 'Preglej osnutek', description: 'AI pripravi osnutek podatkov.' },
@@ -1607,7 +1567,7 @@
                         this.sessionId = data.session_id;
                         this.preparePairs(data.eup, data.namenska_raba);
                         this.prepareKeyData(data);
-                        this.requirements = []; this.resultsMap = {}; this.expandedRequirementIds = []; this.prepareEditableResults();
+                        this.requirements = []; this.resultsMap = {}; this.prepareEditableResults();
                         this.persistState(true);
                         this.markActionResult('extract', 'success');
                         this.stopLoading('success', 'Ekstrakcija uspešna. Preglejte predloge in nadaljujte.');
@@ -1663,7 +1623,6 @@
                         const result = await response.json();
                         this.resultsMap = this.normalizeResultsMap(result.results_map || {});
                         this.requirements = Array.isArray(result.zahteve) ? result.zahteve : [];
-                        this.syncExpandedRequirements();
                         this.prepareEditableResults();
                         this.requirementRevisions = result.requirement_revisions || {};
                         this.latestNonCompliantIds = this.computeNonCompliantIds();
@@ -1703,34 +1662,6 @@
                 },
                 currentStatus(id) { return this.resultsMap[this.stringId(id)]?.skladnost || ''; },
                 displayStatus(id) { const status = this.currentStatus(id); return this.statusLabels[status] || status || 'NEZNANO'; },
-                isRequirementExpanded(id) { return this.expandedRequirementIds.includes(this.stringId(id)); },
-                toggleRequirementBody(id) {
-                    const key = this.stringId(id);
-                    if (!key) return;
-                    if (this.expandedRequirementIds.includes(key)) {
-                        this.expandedRequirementIds = this.expandedRequirementIds.filter(item => item !== key);
-                    } else {
-                        this.expandedRequirementIds = [...this.expandedRequirementIds, key];
-                    }
-                    this.persistState(true);
-                },
-                toggleAllRequirementBodies() {
-                    if (!Array.isArray(this.requirements) || !this.requirements.length) return;
-                    if (this.allRequirementsExpanded) {
-                        this.expandedRequirementIds = [];
-                    } else {
-                        this.expandedRequirementIds = this.requirements.map(req => this.stringId(req.id)).filter(Boolean);
-                    }
-                    this.persistState(true);
-                },
-                syncExpandedRequirements() {
-                    if (!Array.isArray(this.requirements)) {
-                        this.expandedRequirementIds = [];
-                        return;
-                    }
-                    const allowed = new Set(this.requirements.map(req => this.stringId(req.id)).filter(Boolean));
-                    this.expandedRequirementIds = this.expandedRequirementIds.filter(id => allowed.has(id));
-                },
                 updateRequirementStatus(id, value) {
                     this.ensureResultEntry(id).skladnost = value;
                     this.latestNonCompliantIds = this.computeNonCompliantIds();
@@ -1811,7 +1742,7 @@
                         excludedIds: this.excludedIds, requirementRevisions: this.requirementRevisions,
                         latestNonCompliantIds: this.latestNonCompliantIds, analysisSummary: this.analysisSummary,
                         downloadReady: this.downloadReady, revisionInfo: this.revisionInfo,
-                        sortOption: this.sortOption, expandedRequirementIds: this.expandedRequirementIds,
+                        sortOption: this.sortOption,
                         timestamp: new Date().toISOString()
                     };
                 },
@@ -1824,9 +1755,7 @@
                         const raw = localStorage.getItem(this.storageKey); if (!raw) return;
                         const state = JSON.parse(raw); if (!state || !state.sessionId) return;
                         Object.keys(state).forEach(key => { this[key] = state[key]; });
-                        if (!Array.isArray(this.expandedRequirementIds)) this.expandedRequirementIds = [];
                         if (!this.sortOption) this.sortOption = 'default';
-                        this.syncExpandedRequirements();
                         this.setStatus('success', 'Obnovljena je bila lokalno shranjena seja.');
                         this.highlightedSession = { ...state, source: 'local' };
                     } catch (error) { console.warn('Ni mogoče obnoviti seje:', error); }
