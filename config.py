@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -33,6 +32,11 @@ GEN_CFG = {
 }
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("❌ DATABASE_URL manjka v .env datoteki!")
+
+DEFAULT_MUNICIPALITY_SLUG = os.environ.get("KNOWLEDGE_DEFAULT_MUNICIPALITY", "privzeta-obcina")
+DEFAULT_MUNICIPALITY_NAME = os.environ.get("KNOWLEDGE_DEFAULT_MUNICIPALITY_NAME", "Privzeta občina")
 DEFAULT_SQLITE_PATH = PROJECT_ROOT / "local_sessions.db"
 
 # Pot za začasno shranjevanje slik, ustvarjenih med sejami
@@ -46,6 +50,8 @@ __all__ = [
     "POWERFUL_MODEL_NAME",
     "GEN_CFG",
     "DATABASE_URL",
+    "DEFAULT_MUNICIPALITY_SLUG",
+    "DEFAULT_MUNICIPALITY_NAME",
     "DEFAULT_SQLITE_PATH",
     "DATA_DIR",
     "TEMP_STORAGE_PATH",

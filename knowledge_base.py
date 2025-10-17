@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from .config import PROJECT_ROOT
+from .config import DEFAULT_MUNICIPALITY_NAME, DEFAULT_MUNICIPALITY_SLUG
+from .knowledge_store import knowledge_repository
 
 KEYWORD_TO_CLEN = {
     # Gradnja in objekti
@@ -73,18 +73,15 @@ def format_uredba_summary(uredba_data: Dict[str, Any]) -> str:
         return str(uredba_data)
 
 
-def load_json(path: Path) -> Dict[str, Any]:
-    try:
-        with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
-    except FileNotFoundError:
-        return {}
+def load_knowledge_base(
+    municipality_slug: str | None = None,
+) -> Tuple[Dict, Dict, List, Dict, str, str]:
+    slug = municipality_slug or DEFAULT_MUNICIPALITY_SLUG
+    knowledge_repository.ensure_bootstrap(slug, DEFAULT_MUNICIPALITY_NAME)
 
-
-def load_knowledge_base() -> Tuple[Dict, Dict, List, Dict, str, str]:
-    base_dir = PROJECT_ROOT
-    with (base_dir / "OPN.json").open("r", encoding="utf-8") as handle:
-        opn_katalog = json.load(handle)
+    opn_katalog = knowledge_repository.load_document_json(slug, "core", "opn")
+    if not isinstance(opn_katalog, dict):
+        opn_katalog = {}
 
     clen_data_map: Dict[str, Dict[str, Any]] = {}
     for cat_key, cat_data in opn_katalog.items():
@@ -97,36 +94,29 @@ def load_knowledge_base() -> Tuple[Dict, Dict, List, Dict, str, str]:
                     "parent_clen_key": f"{cat_data['clen']}_clen",
                 }
 
-    priloge = {}
-    priloge_path = {
-        "priloga1": base_dir / "priloga1.json",
-        "priloga2": base_dir / "priloga2.json",
-        "priloga3-4": base_dir / "priloga3-4.json",
-        "Izrazi": base_dir / "Izrazi.json",
+    priloga1_data = knowledge_repository.load_document_json(slug, "priloge", "priloga1")
+    priloga2_data = knowledge_repository.load_document_json(slug, "priloge", "priloga2")
+    priloga34_data = knowledge_repository.load_document_json(slug, "priloge", "priloga3-4")
+    izrazi_data_raw = knowledge_repository.load_document_json(slug, "priloge", "izrazi")
+
+    priloge = {
+        "priloga1": priloga1_data if isinstance(priloga1_data, dict) else {},
+        "priloga2": priloga2_data if isinstance(priloga2_data, dict) else {},
+        "priloga3": {},
+        "priloga4": {},
+        "Izrazi": izrazi_data_raw if isinstance(izrazi_data_raw, dict) else {},
     }
+    if isinstance(priloga34_data, dict):
+        priloge["priloga3"] = priloga34_data.get("priloga3", {}) or {}
+        priloge["priloga4"] = priloga34_data.get("priloga4", {}) or {}
 
-    for key, path in priloge_path.items():
-        try:
-            with path.open("r", encoding="utf-8") as handle:
-                if key == "priloga3-4":
-                    data_3_4 = json.load(handle)
-                    priloge.update({
-                        "priloga3": data_3_4.get("priloga3", {}),
-                        "priloga4": data_3_4.get("priloga4", {}),
-                    })
-                else:
-                    priloge[key] = json.load(handle)
-        except (FileNotFoundError, json.JSONDecodeError):
-            priloge[key] = {}
-
-    try:
-        with (base_dir / "UredbaObjekti.json").open("r", encoding="utf-8") as handle:
-            uredba_data = json.load(handle)
-    except (FileNotFoundError, json.JSONDecodeError):
-        uredba_data = {}
-
-    all_eups = [item.get("enota_urejanja", "") for item in priloge.get("priloga2", {}).get("table_entries", [])]
-    all_eups.extend([item.get("urejevalna_enota", "") for item in priloge.get("priloga3", {}).get("entries", [])])
+    all_eups = [
+        item.get("enota_urejanja", "")
+        for item in priloge.get("priloga2", {}).get("table_entries", [])
+    ]
+    all_eups.extend(
+        [item.get("urejevalna_enota", "") for item in priloge.get("priloga3", {}).get("entries", [])]
+    )
     unique_eups = sorted(list(set(filter(None, all_eups))), key=len, reverse=True)
 
     izrazi_data = priloge.get("Izrazi", {})
@@ -135,7 +125,11 @@ def load_knowledge_base() -> Tuple[Dict, Dict, List, Dict, str, str]:
         for term in izrazi_data.get("terms", [])
     ])
 
-    uredba_text = format_uredba_summary(uredba_data)
+    uredba_text = knowledge_repository.load_document_text(slug, "priloge", "uredba-objekti")
+    if not uredba_text:
+        uredba_json = knowledge_repository.load_document_json(slug, "priloge", "uredba-objekti")
+        if isinstance(uredba_json, dict):
+            uredba_text = format_uredba_summary(uredba_json)
 
     return opn_katalog, priloge, unique_eups, clen_data_map, izrazi_text, uredba_text
 
@@ -321,6 +315,25 @@ def build_requirements_from_db(eup_list: List[str], raba_list: List[str], projec
     return zahteve
 
 
+def search_knowledge_documents(
+    query: str, municipality_slug: str | None = None, limit: int = 10
+) -> List[Dict[str, Any]]:
+    slug = municipality_slug or DEFAULT_MUNICIPALITY_SLUG
+    results = knowledge_repository.search_documents(query, slug, limit)
+    return [
+        {
+            "document_id": result.document_id,
+            "municipality_slug": result.municipality_slug,
+            "document_type": result.document_type,
+            "slug": result.slug,
+            "title": result.title or "",
+            "snippet": result.snippet,
+            "score": result.score,
+        }
+        for result in results
+    ]
+
+
 __all__ = [
     "KEYWORD_TO_CLEN",
     "ALL_EUPS",
@@ -333,4 +346,5 @@ __all__ = [
     "build_requirements_from_db",
     "build_priloga1_text",
     "normalize_eup",
+    "search_knowledge_documents",
 ]
