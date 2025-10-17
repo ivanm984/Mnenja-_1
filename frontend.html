@@ -1,4 +1,43 @@
-<!DOCTYPE html>
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
 <html lang="sl">
 <head>
     <meta charset="UTF-8" />
@@ -219,6 +258,8 @@
             font-weight: 600;
             font-size: 0.96rem;
             color: var(--text);
+            display: block;
+            margin-bottom: 8px;
         }
 
         input[type="text"],
@@ -242,7 +283,7 @@
 
         textarea {
             resize: vertical;
-            min-height: 120px;
+            min-height: 80px; /* Adjusted for dynamic height */
             line-height: 1.6;
         }
 
@@ -447,7 +488,7 @@
         .key-grid {
             display: grid;
             gap: 18px;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            grid-template-columns: 1fr; /* Single column for full width */
         }
 
         .key-field {
@@ -461,8 +502,20 @@
         }
 
         .key-field.modified {
-            border-color: rgba(37, 99, 235, 0.5);
+            border: 2px solid rgba(37, 99, 235, 0.5); /* Thicker border when modified */
             box-shadow: 0 22px 46px rgba(37, 99, 235, 0.18);
+        }
+
+        .key-field label {
+            color: var(--muted);
+            font-size: 0.85rem;
+            letter-spacing: 0.04em;
+            text-transform: uppercase; /* Uppercase labels to match metadata */
+        }
+
+        .key-field textarea {
+            min-height: 80px; /* Base height, will grow dynamically */
+            height: auto; /* Allow dynamic height */
         }
 
         .metadata-grid {
@@ -934,8 +987,32 @@
             <div class="section-layout">
                 <div class="section-main">
                     <div>
-                        <h3 style="margin-top:0;">A. EUP in namenske rabe</h3>
-                        <p class="subtitle">Sistem predlaga pare EUP/Raba. Po potrebi jih dopolnite ali popravite.</p>
+                        <h3 style="margin-top:0;">A. Podatki projekta</h3>
+                        <p class="subtitle">Preglejte osnovne podatke o projektu in predlagane pare EUP/Raba. Po potrebi jih dopolnite ali popravite.</p>
+                        
+                        <div class="metadata-grid" style="margin-top: 24px; margin-bottom: 24px;">
+                            <div class="meta-field">
+                                <span class="meta-label">INVESTITOR</span>
+                                <span class="meta-value">{{ metadata.investitor || 'Ni podatka' }}</span>
+                            </div>
+                            <div class="meta-field">
+                                <span class="meta-label">IME PROJEKTA</span>
+                                <span class="meta-value">{{ metadata.ime_projekta || 'Ni podatka' }}</span>
+                            </div>
+                            <div class="meta-field">
+                                <span class="meta-label">ŠTEVILKA PROJEKTA</span>
+                                <span class="meta-value">{{ metadata.stevilka_projekta || 'Ni podatka' }}</span>
+                            </div>
+                            <div class="meta-field">
+                                <span class="meta-label">DATUM PROJEKTA</span>
+                                <span class="meta-value">{{ metadata.datum_projekta || 'Ni podatka' }}</span>
+                            </div>
+                            <div class="meta-field">
+                                <span class="meta-label">PROJEKTANT</span>
+                                <span class="meta-value">{{ metadata.projektant || 'Ni podatka' }}</span>
+                            </div>
+                        </div>
+
                         <div class="grid-two">
                             <div class="pair-card" v-for="(pair, index) in eupPairs" :key="pair.id" :class="{ modified: pairModified(pair) }">
                                 <div>
@@ -954,33 +1031,12 @@
                     </div>
 
                     <div>
-                        <h3>Projektni podatki</h3>
-                        <div class="metadata-grid">
-                            <div class="meta-field">
-                                <span class="meta-label">Ime projekta</span>
-                                <span class="meta-value">{{ metadata.ime_projekta || 'Ni podatka' }}</span>
-                            </div>
-                            <div class="meta-field">
-                                <span class="meta-label">Številka projekta</span>
-                                <span class="meta-value">{{ metadata.stevilka_projekta || 'Ni podatka' }}</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div>
-                        <h3>B. Ključni gabaritni podatki</h3>
-                        <p class="subtitle">Preglejte podatke in jih po potrebi dopolnite. Originalni AI izsek ostane prikazan za transparentnost.</p>
+                        <h3>B. Podatki o gradnji</h3>
+                        <p class="subtitle">Preglejte ključne podatke in jih po potrebi dopolnite. Vrednosti v poljih so neposredno urejene.</p>
                         <div class="key-grid">
                             <div class="key-field" v-for="field in keyFieldList" :key="field.key" :class="{ modified: keyFieldModified(field.key) }">
-                                <div>
-                                    <label :for="field.key">{{ field.label }}</label>
-                                    <textarea v-if="field.isLong" :id="field.key" v-model="keyData[field.key]"></textarea>
-                                    <input v-else :id="field.key" type="text" v-model="keyData[field.key]" />
-                                </div>
-                                <div class="field-hint">
-                                    <strong>AI ekstrakcija:</strong>
-                                    <div>{{ initialKeyData[field.key] || 'Ni podatka v dokumentaciji' }}</div>
-                                </div>
+                                <label :for="field.key">{{ field.label }}</label>
+                                <textarea :id="field.key" v-model="keyData[field.key]" @input="adjustTextareaHeight($event)"></textarea>
                             </div>
                         </div>
                     </div>
@@ -1092,7 +1148,7 @@
         </section>
 
         <footer>
-            &copy; YEAR_PLACEHOLDER – IZDELAVA MNENJA O SKADNOSTI S PIA
+            &copy; 2024 – IZDELAVA MNENJA O SKADNOSTI S PIA
         </footer>
 
         <div v-if="showSavedModal" class="modal-backdrop" @click.self="showSavedModal = false">
@@ -1144,7 +1200,7 @@
                     eupPairs: [],
                     initialKeyData: {},
                     keyData: {},
-                    metadata: {},
+                    metadata: { investitor: '', ime_projekta: '', stevilka_projekta: '', datum_projekta: '', projektant: '' },
                     requirements: [],
                     resultsMap: {},
                     editableFindings: {},
@@ -1186,23 +1242,22 @@
                         { id: 3, title: 'Potrdi in deli', description: 'Pripravite končno poročilo.' }
                     ],
                     keyLabels: {
-                        glavni_objekt: 'OBJEKT (opis funkcije)', vrsta_gradnje: 'VRSTA GRADNJE', klasifikacija_cc_si: 'CC-SI klasifikacija',
-                        nezahtevni_objekti: 'Nezahtevni objekti v projektu', enostavni_objekti: 'Enostavni objekti v projektu',
-                        vzdrzevalna_dela: 'Vzdrževalna dela / manjša rekonstrukcija', parcela_objekta: 'Gradbena parcela (št.)',
-                        stevilke_parcel_ko: 'Vse parcele in k.o.', velikost_parcel: 'Skupna velikost parcel',
-                        velikost_obstojecega_objekta: 'Velikost obstoječega objekta', tlorisne_dimenzije: 'Nove tlorisne dimenzije',
-                        gabariti_etaznost: 'Novi gabarit/Etažnost', faktor_zazidanosti_fz: 'Faktor zazidanosti (FZ)',
-                        faktor_izrabe_fi: 'Faktor izrabe (FI)', zelene_povrsine: 'Zelene površine (FZP/m²)',
-                        naklon_strehe: 'Naklon strehe', kritina_barva: 'Kritina/Barva', materiali_gradnje: 'Materiali gradnje (npr. les)',
-                        smer_slemena: 'Smer slemena', visinske_kote: 'Višinske kote (k.p., k.s.)',
-                        odmiki_parcel: 'Odmiki od parcelnih mej', komunalni_prikljucki: 'Komunalni priključki/Oskrba'
+                        glavni_objekt: 'OBJEKT (OPIS FUNKCIJE)', vrsta_gradnje: 'VRSTA GRADNJE', klasifikacija_cc_si: 'CC-SI KLASIFIKACIJA',
+                        nezahtevni_objekti: 'NEZAHTEVNI OBJEKTI V PROJEKTU', enostavni_objekti: 'ENOSTAVNI OBJEKTI V PROJEKTU',
+                        vzdrzevalna_dela: 'VZDRŽEVALNA DELA / MANJŠA REKONSTRUKCIJA', parcela_objekta: 'GRADBENA PARCELA (ŠT.)',
+                        stevilke_parcel_ko: 'VSE PARCELE IN K.O.', velikost_parcel: 'SKUPNA VELIKOST PARCEL',
+                        velikost_obstojecega_objekta: 'VELIKOST OBSTOJEČEGA OBJEKTA', tlorisne_dimenzije: 'NOVE TLORISNE DIMENZIJE',
+                        gabariti_etaznost: 'NOVI GABARIT/ETAŽNOST', faktor_zazidanosti_fz: 'FAKTOR ZAZIDANOSTI (FZ)',
+                        faktor_izrabe_fi: 'FAKTOR IZRABE (FI)', zelene_povrsine: 'ZELENE POVRŠINE (FZP/m²)',
+                        naklon_strehe: 'NAKLON STREHE', kritina_barva: 'KRITINA/BARVA', materiali_gradnje: 'MATERIALI GRADNJE (npr. les)',
+                        smer_slemena: 'SMER SLEMENA', visinske_kote: 'VIŠINSKE KOTE (k.p., k.s.)',
+                        odmiki_parcel: 'ODMIKI OD PARCELNIH MEJ', komunalni_prikljucki: 'KOMUNALNI PRIKLJUČKI/OSKRBA'
                     },
-                    longFieldKeys: new Set(['stevilke_parcel_ko', 'odmiki_parcel', 'komunalni_prikljucki', 'nezahtevni_objekti', 'enostavni_objekti', 'vzdrzevalna_dela']),
                     storageKey: 'mnenja-vue-state'
                 };
             },
             computed: {
-                keyFieldList() { return Object.entries(this.keyLabels).map(([key, label]) => ({ key, label, isLong: this.longFieldKeys.has(key) })); },
+                keyFieldList() { return Object.entries(this.keyLabels).map(([key, label]) => ({ key, label })); },
                 heroActiveStep() { if (Array.isArray(this.requirements) && this.requirements.length) return 3; if (this.showReview) return 2; return 1; },
                 showReview() { return !!this.sessionId && this.eupPairs.length > 0; }
             },
@@ -1292,6 +1347,11 @@
                         this.activeEditorId = '';
                     }
                 },
+                adjustTextareaHeight(event) {
+                    const textarea = event.target;
+                    textarea.style.height = 'auto'; // Reset height
+                    textarea.style.height = `${textarea.scrollHeight}px`; // Set to content height
+                },
                 formatFileSize(size) {
                     if (!size) return '0 B';
                     const units = ['B', 'KB', 'MB', 'GB']; let i = 0;
@@ -1348,7 +1408,13 @@
                         const val = data[key] || 'Ni podatka v dokumentaciji';
                         this.initialKeyData[key] = val; this.keyData[key] = val;
                     });
-                    this.metadata = { ime_projekta: data.ime_projekta, stevilka_projekta: data.stevilka_projekta };
+                    this.metadata = { 
+                        investitor: data.investitor,
+                        ime_projekta: data.ime_projekta,
+                        stevilka_projekta: data.stevilka_projekta,
+                        datum_projekta: data.datum_projekta,
+                        projektant: data.projektant
+                    };
                 },
                 async runAnalysis(extra = {}) {
                     if (!this.sessionId) { this.setStatus('error', 'Seja ni aktivna.'); return; }
@@ -1390,6 +1456,11 @@
                         this.markActionResult(actionKey, 'error');
                         this.stopLoading('error', error.message);
                     }
+                },
+                computeNonCompliantIds() {
+                    return this.requirements
+                        .filter(req => this.currentStatus(req.id).toLowerCase() === 'neskladno')
+                        .map(req => this.stringId(req.id));
                 },
                 buildAnalysisSummary(result) {
                     const total = this.requirements.length;
@@ -1526,6 +1597,13 @@
             mounted() {
                 this.restoreFromLocal();
                 this.fetchSavedSessions();
+                // Adjust all textareas on mount
+                this.$nextTick(() => {
+                    this.$el.querySelectorAll('.key-field textarea').forEach(textarea => {
+                        textarea.style.height = 'auto';
+                        textarea.style.height = `${textarea.scrollHeight}px`;
+                    });
+                });
             }
         }).mount('#app');
     </script>
