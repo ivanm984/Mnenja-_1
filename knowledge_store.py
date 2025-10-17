@@ -73,7 +73,8 @@ class KnowledgeDocument(Base):
     title: Mapped[Optional[str]] = mapped_column(String(255))
     content_json: Mapped[Dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     content_text: Mapped[str] = mapped_column(Text, default="", nullable=False)
-    metadata: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    # IMPORTANT: attribute name must NOT be 'metadata' (reserved by SQLAlchemy)
+    meta: Mapped[Dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
     embedding: Mapped[Optional[Sequence[float]]] = mapped_column(ARRAY(Float))
     embedding_model: Mapped[Optional[str]] = mapped_column(String(64))
     embedding_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
@@ -115,7 +116,8 @@ class KnowledgeChunk(Base):
     )
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    metadata: Mapped[Dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    # IMPORTANT: attribute name must NOT be 'metadata'
+    meta: Mapped[Dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
     embedding: Mapped[Optional[Sequence[float]]] = mapped_column(ARRAY(Float))
     embedding_model: Mapped[Optional[str]] = mapped_column(String(64))
     embedding_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
@@ -212,6 +214,7 @@ class KnowledgeBaseRepository:
         content_text: str,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> KnowledgeDocument:
+        # keep parameter name 'metadata' for callers; map to attribute 'meta'
         metadata = metadata or {}
         with self.session_scope() as session:
             stmt = select(KnowledgeDocument).where(
@@ -224,7 +227,7 @@ class KnowledgeBaseRepository:
                 document.title = title
                 document.content_json = content_json
                 document.content_text = content_text
-                document.metadata = metadata
+                document.meta = metadata  # <— attribute is 'meta'
                 document.updated_at = datetime.utcnow()
             else:
                 document = KnowledgeDocument(
@@ -234,7 +237,7 @@ class KnowledgeBaseRepository:
                     title=title,
                     content_json=content_json,
                     content_text=content_text,
-                    metadata=metadata,
+                    meta=metadata,  # <— attribute is 'meta'
                 )
                 session.add(document)
             session.commit()
