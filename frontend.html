@@ -1417,6 +1417,11 @@
                     };
                     return items.sort(comparator).map(item => item.req);
                 },
+                allRequirementsExpanded() {
+                    const list = Array.isArray(this.requirements) ? this.requirements : [];
+                    if (!list.length) return false;
+                    return list.every(req => this.isRequirementExpanded(req.id));
+                },
                 revisionTargetIds() {
                     if (this.selectedRequirementIds.length) return this.selectedRequirementIds.slice();
                     return this.latestNonCompliantIds.slice();
