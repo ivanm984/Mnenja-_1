@@ -256,6 +256,128 @@ async def analyze_report(payload: AnalysisReportPayload):
         "non_compliant_ids": non_compliant_ids, "requirement_revisions": requirement_revisions,
     }
 
+@router.post("/upload-revision")
+async def upload_revision(
+    session_id: str = Form(...),
+    requirement_ids: str = Form(...),
+    revision_files: List[UploadFile] = File(...),
+    note: Optional[str] = Form(None),
+    revision_pages: Optional[str] = Form(None),
+):
+    logger.info(f"[{session_id}] Sprejemam popravljeno dokumentacijo za dodatno analizo.")
+
+    session_data = await cache_manager.retrieve_session_data(session_id)
+    if not session_data:
+        raise HTTPException(status_code=404, detail="Seja ne obstaja ali je potekla.")
+
+    note = note.strip() if note else None
+
+    try:
+        parsed_ids = json.loads(requirement_ids)
+        if isinstance(parsed_ids, (str, int)):
+            parsed_ids = [str(parsed_ids)]
+        elif isinstance(parsed_ids, list):
+            parsed_ids = [str(item) for item in parsed_ids if str(item).strip()]
+        else:
+            parsed_ids = []
+    except (json.JSONDecodeError, TypeError, ValueError):
+        parsed_ids = []
+
+    if not parsed_ids:
+        raise HTTPException(status_code=400, detail="Ni izbranih zahtev za ponovno analizo.")
+
+    page_overrides: Dict[str, str] = {}
+    if revision_pages:
+        try:
+            parsed_pages = json.loads(revision_pages)
+            if isinstance(parsed_pages, list):
+                for entry in parsed_pages:
+                    if isinstance(entry, dict):
+                        name, pages = entry.get("name"), entry.get("pages")
+                        if name and isinstance(pages, str) and pages.strip():
+                            page_overrides[name] = pages.strip()
+        except (json.JSONDecodeError, ValueError):
+            logger.warning(f"[{session_id}] Neveljaven revision_pages payload, ignoriram.")
+
+    revision_text_parts: List[str] = []
+    revision_images = []
+    stored_files_payload = []
+
+    for upload in revision_files:
+        pdf_bytes = await upload.read()
+        if not pdf_bytes:
+            continue
+        filename = upload.filename or "Popravek.pdf"
+        stored_files_payload.append((filename, pdf_bytes, upload.content_type or "application/pdf"))
+        text = parse_pdf(pdf_bytes)
+        if text:
+            revision_text_parts.append(f"=== REVIZIJA: {filename} ===\n{text}")
+        page_hint = page_overrides.get(filename)
+        if page_hint:
+            try:
+                revision_images.extend(convert_pdf_pages_to_images(pdf_bytes, page_hint))
+            except Exception as exc:
+                logger.warning(f"[{session_id}] Napaka pri pretvorbi slik popravka {filename}: {exc}")
+
+    if not stored_files_payload:
+        raise HTTPException(status_code=400, detail="Ni veljavnih popravljenih dokumentov.")
+
+    primary_requirement = parsed_ids[0] if len(parsed_ids) == 1 else None
+    filenames, file_paths, mime_types = save_revision_files(
+        session_id, stored_files_payload, requirement_id=primary_requirement
+    )
+
+    await db_manager.record_revision(
+        session_id,
+        filenames,
+        file_paths,
+        requirement_id=primary_requirement,
+        note=note,
+        mime_types=mime_types,
+    )
+
+    if revision_text_parts:
+        timestamp = datetime.utcnow().strftime("%d.%m.%Y %H:%M")
+        header_lines = ["--- REVIZIJA DOKUMENTACIJE ---", f"Čas naložitve: {timestamp}"]
+        if note:
+            header_lines.append(f"Opomba: {note}")
+        revision_block = "\n".join(header_lines + ["", "\n\n".join(revision_text_parts)])
+        existing_text = session_data.get("project_text", "")
+        session_data["project_text"] = f"{existing_text}\n\n{revision_block}" if existing_text else revision_block
+
+    if revision_images:
+        new_image_paths = await save_images_for_session(session_id, revision_images)
+        session_data.setdefault("image_paths", [])
+        session_data["image_paths"].extend(new_image_paths)
+
+    revision_history = session_data.setdefault("revision_history", [])
+    revision_history.append(
+        {
+            "filenames": filenames,
+            "note": note or "",
+            "uploaded_at": datetime.utcnow().isoformat(),
+            "requirement_ids": parsed_ids,
+        }
+    )
+
+    await cache_manager.store_session_data(session_id, session_data)
+
+    revisions = await db_manager.fetch_revisions(session_id)
+    requirement_revisions: Dict[str, List[Dict[str, Any]]] = {}
+    for revision in revisions:
+        req_id = revision.get("requirement_id")
+        if req_id:
+            requirement_revisions.setdefault(str(req_id), []).append(revision)
+
+    logger.info(f"[{session_id}] Popravek shranjen. Pripravljen na ponovno analizo {len(parsed_ids)} zahtev.")
+
+    return {
+        "status": "success",
+        "message": "Popravek je shranjen.",
+        "requirement_revisions": requirement_revisions,
+        "target_ids": parsed_ids,
+    }
+
 @router.post("/confirm-report")
 async def confirm_report(payload: ConfirmReportPayload, background_tasks: BackgroundTasks):
     session_id = payload.session_id
