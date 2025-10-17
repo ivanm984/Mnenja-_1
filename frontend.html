@@ -1,0 +1,1533 @@
+<!DOCTYPE html>
+<html lang="sl">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IZDELAVA MNENJA O SKADNOSTI S PIA</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            color-scheme: light;
+            --bg-gradient: radial-gradient(circle at top left, rgba(37, 99, 235, 0.12), transparent 50%),
+                            radial-gradient(circle at bottom right, rgba(34, 197, 94, 0.12), transparent 60%),
+                            #f5f7ff;
+            --card: #ffffff;
+            --muted: #6b7280;
+            --text: #0f172a;
+            --border: #d6deeb;
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --danger: #dc2626;
+            --success: #16a34a;
+            --warning: #f97316;
+            --radius-lg: 22px;
+            --radius-md: 16px;
+            --shadow-lg: 0 28px 60px rgba(15, 23, 42, 0.16);
+            --shadow-md: 0 20px 40px rgba(15, 23, 42, 0.12);
+            --shadow-sm: 0 12px 24px rgba(15, 23, 42, 0.08);
+            font-size: 16px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-gradient);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            padding: clamp(32px, 4vw, 64px) clamp(16px, 4vw, 56px);
+        }
+
+        [v-cloak] { display: none !important; }
+
+        a { color: inherit; }
+
+        .app-shell {
+            width: min(1160px, 100%);
+            display: flex;
+            flex-direction: column;
+            gap: 32px;
+        }
+
+        .hero {
+            background: linear-gradient(135deg, rgba(37, 99, 235, 0.18), rgba(14, 165, 233, 0.14));
+            padding: clamp(32px, 3vw, 48px);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-lg);
+            color: #0f172a;
+            display: grid;
+            gap: 24px;
+        }
+
+        .hero h1 {
+            margin: 0;
+            font-size: clamp(2.1rem, 1rem + 2vw, 2.8rem);
+            line-height: 1.1;
+        }
+
+        .hero p {
+            margin: 0;
+            max-width: 680px;
+            color: rgba(15, 23, 42, 0.82);
+            font-size: 1.05rem;
+            line-height: 1.65;
+        }
+
+        .steps {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 14px;
+        }
+
+        .step-card {
+            backdrop-filter: blur(12px);
+            background: rgba(255, 255, 255, 0.88);
+            border: 2px solid rgba(148, 163, 184, 0.35);
+            border-radius: var(--radius-md);
+            padding: 18px 20px;
+            box-shadow: var(--shadow-sm);
+            display: grid;
+            gap: 8px;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+        }
+
+        .step-card.active {
+            border-color: rgba(37, 99, 235, 0.65);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18);
+            transform: translateY(-2px);
+        }
+
+        .step-card.completed {
+            border-color: rgba(22, 163, 74, 0.45);
+        }
+
+        .step-card strong {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            border-radius: 12px;
+            background: rgba(37, 99, 235, 0.14);
+            color: var(--primary);
+            font-size: 1.1rem;
+        }
+
+        .surface {
+            background: var(--card);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-md);
+            padding: clamp(28px, 2.4vw, 36px);
+            display: grid;
+            gap: 28px;
+        }
+
+        .section-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 18px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .section-title {
+            font-weight: 700;
+            font-size: 1.3rem;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .badge {
+            width: 42px;
+            height: 42px;
+            border-radius: 16px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(37, 99, 235, 0.12);
+            color: var(--primary);
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+
+        .subtitle {
+            color: var(--muted);
+            font-size: 0.98rem;
+            line-height: 1.6;
+            margin: 0;
+        }
+
+        .upload-drop {
+            border: 2px dashed rgba(37, 99, 235, 0.3);
+            border-radius: var(--radius-md);
+            padding: clamp(24px, 2.6vw, 36px);
+            background: rgba(248, 250, 255, 0.8);
+            display: grid;
+            gap: 18px;
+            transition: border 0.25s ease, background 0.25s ease, box-shadow 0.25s ease;
+        }
+
+        .upload-drop.is-dragging {
+            border-color: var(--primary);
+            background: rgba(237, 242, 255, 0.95);
+            box-shadow: 0 22px 46px rgba(37, 99, 235, 0.16);
+        }
+
+        .upload-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .file-list {
+            display: grid;
+            gap: 14px;
+        }
+
+        .file-item {
+            display: grid;
+            gap: 12px;
+            border-radius: var(--radius-md);
+            padding: 16px 18px;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .file-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .file-meta {
+            color: var(--muted);
+            font-size: 0.85rem;
+        }
+
+        label {
+            font-weight: 600;
+            font-size: 0.96rem;
+            color: var(--text);
+        }
+
+        input[type="text"],
+        textarea,
+        select {
+            width: 100%;
+            border-radius: 14px;
+            border: 1px solid rgba(148, 163, 184, 0.5);
+            padding: 12px 14px;
+            font-size: 0.98rem;
+            background: rgba(248, 250, 255, 0.9);
+            transition: border 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        input[type="text"]:focus,
+        textarea:focus {
+            outline: none;
+            border-color: rgba(37, 99, 235, 0.7);
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.15);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 120px;
+            line-height: 1.6;
+        }
+
+        .btn {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            border-radius: 14px;
+            border: 1px solid transparent;
+            padding: 14px 20px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, border 0.2s ease, color 0.2s ease;
+            overflow: hidden;
+        }
+
+        .btn::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: rgba(255, 255, 255, 0.08);
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.7;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn:focus-visible {
+            outline: none;
+            box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.18);
+        }
+
+        .btn:hover:not(:disabled)::after {
+            opacity: 1;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary), #1d8ef2);
+            color: #fff;
+            box-shadow: 0 18px 32px rgba(37, 99, 235, 0.24);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-1px);
+        }
+
+        .btn-outline {
+            background: rgba(255, 255, 255, 0.92);
+            border-color: rgba(37, 99, 235, 0.28);
+            color: var(--primary);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .btn-outline:hover:not(:disabled) {
+            background: rgba(237, 242, 255, 0.9);
+        }
+
+        .btn-secondary {
+            background: rgba(15, 23, 42, 0.06);
+            border-color: rgba(15, 23, 42, 0.12);
+            color: var(--text);
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: rgba(15, 23, 42, 0.12);
+        }
+
+        .btn-danger {
+            background: rgba(220, 38, 38, 0.12);
+            border-color: rgba(220, 38, 38, 0.28);
+            color: #991b1b;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            background: rgba(220, 38, 38, 0.18);
+        }
+
+        .btn[data-state="working"] {
+            pointer-events: none;
+            transform: translateY(-1px);
+            box-shadow: 0 12px 26px rgba(37, 99, 235, 0.24);
+            padding-right: 42px;
+        }
+
+        .btn[data-state="working"]::before {
+            content: '';
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            border: 3px solid currentColor;
+            border-bottom-color: transparent;
+            animation: spin 0.8s linear infinite;
+            right: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+
+        .btn[data-state="success"] {
+            background: rgba(22, 163, 74, 0.14);
+            border-color: rgba(22, 163, 74, 0.4);
+            color: #166534;
+            box-shadow: 0 14px 26px rgba(22, 163, 74, 0.24);
+        }
+
+        .btn-primary[data-state="success"] {
+            background: linear-gradient(135deg, var(--success), #22c55e);
+            color: #fff;
+        }
+
+        .btn-outline[data-state="success"] {
+            background: rgba(22, 163, 74, 0.12);
+            border-color: rgba(22, 163, 74, 0.38);
+            color: #166534;
+        }
+
+        .btn-secondary[data-state="success"] {
+            background: rgba(22, 163, 74, 0.12);
+            border-color: rgba(22, 163, 74, 0.32);
+            color: #166534;
+        }
+
+        .btn-danger[data-state="success"] {
+            background: rgba(22, 163, 74, 0.12);
+            border-color: rgba(22, 163, 74, 0.38);
+            color: #166534;
+        }
+
+        .btn[data-state="error"] {
+            background: rgba(220, 38, 38, 0.16);
+            border-color: rgba(220, 38, 38, 0.4);
+            color: #b91c1c;
+            box-shadow: 0 14px 26px rgba(220, 38, 38, 0.22);
+        }
+
+        .btn-primary[data-state="error"] {
+            background: linear-gradient(135deg, #dc2626, #ef4444);
+            border-color: rgba(220, 38, 38, 0.65);
+            color: #fff;
+        }
+
+        .status-banner {
+            border-radius: var(--radius-md);
+            padding: 16px 18px;
+            border: 1px solid transparent;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .status-banner.status-success { background: #ecfdf5; border-color: rgba(16, 185, 129, 0.32); color: #047857; }
+        .status-banner.status-error { background: #fef2f2; border-color: rgba(220, 38, 38, 0.28); color: #b91c1c; }
+        .status-banner.status-info { background: #eff6ff; border-color: rgba(37, 99, 235, 0.28); color: var(--primary); }
+
+        .fade-enter-active, .fade-leave-active {
+            transition: opacity 0.25s ease;
+        }
+
+        .fade-enter-from, .fade-leave-to {
+            opacity: 0;
+        }
+
+        .grid-two {
+            display: grid;
+            gap: 16px;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        }
+
+        .pair-card {
+            border-radius: var(--radius-md);
+            border: 1px solid rgba(37, 99, 235, 0.18);
+            background: rgba(255, 255, 255, 0.92);
+            padding: 16px 18px;
+            display: grid;
+            gap: 12px;
+            box-shadow: var(--shadow-sm);
+            position: relative;
+        }
+
+        .pair-card.modified {
+            border-color: var(--primary);
+            box-shadow: 0 22px 40px rgba(37, 99, 235, 0.18);
+        }
+
+        .pair-card .hint {
+            font-size: 0.85rem;
+            color: var(--muted);
+            background: rgba(37, 99, 235, 0.08);
+            padding: 10px 12px;
+            border-radius: 12px;
+        }
+
+        .key-grid {
+            display: grid;
+            gap: 18px;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        }
+
+        .key-field {
+            display: grid;
+            gap: 10px;
+            padding: 18px 20px;
+            border-radius: var(--radius-md);
+            background: rgba(248, 250, 255, 0.92);
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .key-field.modified {
+            border-color: rgba(37, 99, 235, 0.5);
+            box-shadow: 0 22px 46px rgba(37, 99, 235, 0.18);
+        }
+
+        .metadata-grid {
+            display: grid;
+            gap: 12px;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        }
+
+        .meta-field {
+            background: rgba(255, 255, 255, 0.92);
+            border-radius: var(--radius-md);
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            padding: 14px 16px;
+            display: grid;
+            gap: 6px;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .meta-label {
+            color: var(--muted);
+            font-size: 0.85rem;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .meta-value {
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .field-hint {
+            font-size: 0.85rem;
+            color: rgba(15, 23, 42, 0.65);
+            background: rgba(37, 99, 235, 0.08);
+            padding: 8px 10px;
+            border-radius: 10px;
+            white-space: pre-line;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 14px 16px;
+            text-align: left;
+            border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+            vertical-align: top;
+        }
+
+        .results-table {
+            overflow-x: auto;
+            border-radius: var(--radius-md);
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+        }
+
+        .results-table table {
+            min-width: 780px;
+        }
+
+        .results-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .analysis-editor {
+            position: relative;
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 16px;
+            background: rgba(37, 99, 235, 0.04);
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+            min-height: 168px;
+            overflow: hidden;
+        }
+
+        .analysis-editor.modified {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.16);
+            background: rgba(37, 99, 235, 0.08);
+        }
+
+        .analysis-display {
+            display: grid;
+            gap: 10px;
+            transition: opacity 0.2s ease;
+        }
+
+        .analysis-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .analysis-header strong {
+            font-size: 1rem;
+        }
+
+        .analysis-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(37, 99, 235, 0.12);
+            color: var(--primary);
+            border-radius: 999px;
+            padding: 4px 10px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .analysis-section {
+            display: grid;
+            gap: 4px;
+        }
+
+        .analysis-section strong {
+            font-size: 0.92rem;
+            color: rgba(15, 23, 42, 0.72);
+        }
+
+        .analysis-section div {
+            white-space: pre-line;
+        }
+
+        .analysis-hint {
+            font-size: 0.84rem;
+            color: var(--muted);
+        }
+
+        .analysis-hover {
+            position: absolute;
+            inset: 0;
+            padding: 16px;
+            background: var(--card);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.18s ease;
+        }
+
+        .analysis-editor:hover .analysis-hover,
+        .analysis-editor:focus-within .analysis-hover,
+        .analysis-editor.active .analysis-hover {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .analysis-editor:hover .analysis-display,
+        .analysis-editor:focus-within .analysis-display,
+        .analysis-editor.active .analysis-display {
+            opacity: 0;
+        }
+
+        .analysis-hover label {
+            font-weight: 600;
+            font-size: 0.92rem;
+            color: rgba(15, 23, 42, 0.86);
+        }
+
+        .analysis-hover textarea {
+            min-height: 96px;
+            resize: vertical;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            padding: 10px 12px;
+            font-family: inherit;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            background: rgba(15, 23, 42, 0.02);
+            transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+        }
+
+        .analysis-hover textarea:focus {
+            border-color: var(--primary);
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+            background: #ffffff;
+        }
+
+        .analysis-empty {
+            color: rgba(15, 23, 42, 0.6);
+            font-style: italic;
+        }
+
+        thead {
+            background: rgba(37, 99, 235, 0.08);
+        }
+
+        tbody tr:hover {
+            background: rgba(37, 99, 235, 0.05);
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-size: 0.82rem;
+        }
+
+        .status-pill::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .status-pill.skladno { color: var(--success); background: rgba(16, 185, 129, 0.16); }
+        .status-pill.neskladno { color: var(--danger); background: rgba(220, 38, 38, 0.16); }
+        .status-pill.ni-relevantno { color: var(--primary); background: rgba(37, 99, 235, 0.16); }
+        .status-pill.neznano { color: rgba(15, 23, 42, 0.75); background: rgba(15, 23, 42, 0.12); }
+
+        .status-cell {
+            min-width: 200px;
+        }
+
+        .status-control {
+            display: grid;
+            gap: 10px;
+        }
+
+        .status-control select {
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 10px 14px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            background: rgba(15, 23, 42, 0.03);
+            color: var(--text);
+            cursor: pointer;
+            transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+        }
+
+        .status-control select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+            background: #ffffff;
+        }
+
+        .actions-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .section-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(240px, 280px);
+            gap: 32px;
+            align-items: start;
+        }
+
+        .section-main {
+            display: grid;
+            gap: 32px;
+        }
+
+        .section-sidebar {
+            display: grid;
+            gap: 18px;
+            position: sticky;
+            top: 24px;
+            align-self: start;
+        }
+
+        .sidebar-card {
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            border-radius: var(--radius-md);
+            padding: 20px 22px;
+            box-shadow: var(--shadow-sm);
+            display: grid;
+            gap: 16px;
+        }
+
+        .sidebar-title {
+            margin: 0;
+            font-size: 1.05rem;
+            font-weight: 600;
+        }
+
+        .sidebar-hint {
+            margin: 0;
+            color: var(--muted);
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+
+        .actions-stack {
+            display: grid;
+            gap: 12px;
+        }
+
+        .empty-note {
+            color: var(--muted);
+            font-style: italic;
+        }
+
+        .revision-card {
+            border-radius: var(--radius-md);
+            border: 1px dashed rgba(37, 99, 235, 0.28);
+            padding: 20px 22px;
+            background: rgba(37, 99, 235, 0.08);
+            display: grid;
+            gap: 14px;
+        }
+
+        @media (max-width: 1080px) {
+            .section-layout { grid-template-columns: 1fr; }
+            .section-sidebar { position: static; }
+        }
+
+        .modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.55);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            z-index: 40;
+        }
+
+        .modal-card {
+            background: #fff;
+            border-radius: 20px;
+            padding: 28px;
+            width: min(560px, 100%);
+            box-shadow: var(--shadow-lg);
+            display: grid;
+            gap: 18px;
+        }
+
+        .saved-item {
+            border-radius: 14px;
+            border: 1px solid rgba(148, 163, 184, 0.32);
+            padding: 16px 18px;
+            display: grid;
+            gap: 6px;
+        }
+
+        .saved-item small { color: var(--muted); }
+
+        .spinner-overlay {
+            position: fixed;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(6px);
+            z-index: 50;
+        }
+
+        .spinner {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            border: 5px solid rgba(37, 99, 235, 0.18);
+            border-top-color: var(--primary);
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        footer {
+            text-align: center;
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        @media (max-width: 720px) {
+            body { padding: 28px 14px 40px; }
+            .section-head { align-items: stretch; }
+            .actions-row { flex-direction: column; }
+            .section-layout { grid-template-columns: 1fr; }
+            .section-sidebar { position: static; }
+        }
+    </style>
+</head>
+<body>
+    <div id="app" class="app-shell" v-cloak>
+        <header class="hero">
+            <div>
+                <h1>IZDELAVA MNENJA O SKADNOSTI S PIA</h1>
+                <p>Napredni pregled projektne dokumentacije, ki združuje AI ekstrakcijo ključnih podatkov, preglednost korakov in jasne povratne informacije za vašo ekipo.</p>
+            </div>
+            <div class="steps">
+                <div class="step-card" v-for="step in heroSteps" :key="step.title" :class="heroStepClass(step.id)">
+                    <strong>{{ step.id }}</strong>
+                    <div>{{ step.title }}</div>
+                    <small class="subtitle">{{ step.description }}</small>
+                </div>
+            </div>
+        </header>
+
+        <transition name="fade">
+            <div v-if="status.message" class="status-banner" :class="`status-${status.type}`">
+                <span>{{ status.message }}</span>
+                <button class="btn btn-secondary" @click="status.message = ''" style="padding: 6px 10px;">Zapri</button>
+            </div>
+        </transition>
+
+        <section class="surface">
+            <div class="section-head">
+                <div class="section-title">
+                    <span class="badge">1</span>
+                    Priprava dokumentacije
+                </div>
+                <div class="actions-row" style="gap:10px;">
+                    <button class="btn btn-outline" @click="openSavedModal" :disabled="savedSessionsLoading">Odpri shranjeno analizo</button>
+                    <button class="btn btn-secondary" v-if="highlightedSession" @click="restoreHighlighted">Nadaljuj z zadnjo sejo</button>
+                    <button class="btn btn-secondary" v-if="highlightedSession" @click="discardHighlighted">Izbriši shranjeno</button>
+                </div>
+            </div>
+            <p class="subtitle">Dodajte vse PDF priloge projekta. Za grafične priloge lahko določite strani, ki jih bo sistem pretvoril v slike.</p>
+
+            <div class="upload-drop" :class="{ 'is-dragging': isDragging }" @dragenter.prevent="isDragging = true" @dragleave.prevent="isDragging = false" @dragover.prevent @drop.prevent="handleDrop">
+                <div class="upload-actions">
+                    <input ref="fileInput" type="file" accept="application/pdf" multiple hidden @change="handleFileSelect" />
+                    <button class="btn btn-primary" @click.prevent="$refs.fileInput.click()">Izberi PDF datoteke</button>
+                    <span class="subtitle">ali povlecite dokumente v to območje.</span>
+                </div>
+                <div class="file-list" v-if="files.length">
+                    <div class="file-item" v-for="file in files" :key="file.id">
+                        <div class="file-row">
+                            <div>
+                                <strong>{{ file.file.name }}</strong>
+                                <div class="file-meta">{{ formatFileSize(file.file.size) }}</div>
+                            </div>
+                            <button class="btn btn-secondary" @click="removeFile(file.id)">Odstrani</button>
+                        </div>
+                        <div>
+                            <label :for="`pages-${file.id}`">Strani za pretvorbo v slike (neobvezno)</label>
+                            <input :id="`pages-${file.id}`" type="text" v-model="pageOverrides[file.id]" placeholder="npr. 2, 4-6" autocomplete="off" />
+                        </div>
+                    </div>
+                </div>
+                <p class="subtitle" v-else>Trenutno ni izbranih datotek.</p>
+            </div>
+
+            <div class="actions-row">
+                <button class="btn btn-primary" @click="extractData" :disabled="!files.length || isBusy" :data-state="actionStates.extract">Ekstrahiraj ključne podatke</button>
+            </div>
+        </section>
+
+        <section class="surface" v-if="showReview">
+            <div class="section-head">
+                <div class="section-title">
+                    <span class="badge">2</span>
+                    Pregled in potrditev podatkov
+                </div>
+                <div class="subtitle">Seja: {{ sessionId || 'ni začeta' }}</div>
+            </div>
+
+            <div class="section-layout">
+                <div class="section-main">
+                    <div>
+                        <h3 style="margin-top:0;">A. EUP in namenske rabe</h3>
+                        <p class="subtitle">Sistem predlaga pare EUP/Raba. Po potrebi jih dopolnite ali popravite.</p>
+                        <div class="grid-two">
+                            <div class="pair-card" v-for="(pair, index) in eupPairs" :key="pair.id" :class="{ modified: pairModified(pair) }">
+                                <div>
+                                    <label :for="`eup-${pair.id}`">EUP</label>
+                                    <input :id="`eup-${pair.id}`" type="text" v-model="pair.eup" placeholder="npr. LI-08" />
+                                </div>
+                                <div>
+                                    <label :for="`raba-${pair.id}`">Namenska raba</label>
+                                    <input :id="`raba-${pair.id}`" type="text" v-model="pair.raba" placeholder="npr. SSe" />
+                                </div>
+                                <div class="hint">AI predlog: {{ pair.originalEup || '—' }} / {{ pair.originalRaba || '—' }}</div>
+                                <button class="btn btn-secondary" v-if="eupPairs.length > 1" @click="removePair(index)">Odstrani</button>
+                            </div>
+                        </div>
+                        <button class="btn btn-outline" style="margin-top:12px;" @click="addPair">Dodaj EUP/Rabo</button>
+                    </div>
+
+                    <div>
+                        <h3>Projektni podatki</h3>
+                        <div class="metadata-grid">
+                            <div class="meta-field">
+                                <span class="meta-label">Ime projekta</span>
+                                <span class="meta-value">{{ metadata.ime_projekta || 'Ni podatka' }}</span>
+                            </div>
+                            <div class="meta-field">
+                                <span class="meta-label">Številka projekta</span>
+                                <span class="meta-value">{{ metadata.stevilka_projekta || 'Ni podatka' }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h3>B. Ključni gabaritni podatki</h3>
+                        <p class="subtitle">Preglejte podatke in jih po potrebi dopolnite. Originalni AI izsek ostane prikazan za transparentnost.</p>
+                        <div class="key-grid">
+                            <div class="key-field" v-for="field in keyFieldList" :key="field.key" :class="{ modified: keyFieldModified(field.key) }">
+                                <div>
+                                    <label :for="field.key">{{ field.label }}</label>
+                                    <textarea v-if="field.isLong" :id="field.key" v-model="keyData[field.key]"></textarea>
+                                    <input v-else :id="field.key" type="text" v-model="keyData[field.key]" />
+                                </div>
+                                <div class="field-hint">
+                                    <strong>AI ekstrakcija:</strong>
+                                    <div>{{ initialKeyData[field.key] || 'Ni podatka v dokumentaciji' }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <aside class="section-sidebar">
+                    <div class="sidebar-card">
+                        <h4 class="sidebar-title">Upravljanje analize</h4>
+                        <p class="sidebar-hint">Gumbi so razporejeni po pomembnosti. Po kliku se barva spremeni in potrdi izvedbo.</p>
+                        <div class="actions-stack">
+                            <button class="btn btn-danger" @click="resetAnalysis" :disabled="isBusy" :data-state="actionStates.reset">Ponastavi analizo</button>
+                            <button class="btn btn-outline" @click="saveProgress" :disabled="isBusy || !sessionId" :data-state="actionStates.save">Shrani napredek</button>
+                            <button class="btn btn-primary" @click="runAnalysis()" :disabled="isBusy" :data-state="actionStates.run">Izvedi podrobno analizo</button>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </section>
+
+        <section class="surface" v-if="requirements.length">
+            <div class="section-head">
+                <div class="section-title">
+                    <span class="badge">3</span>
+                    Rezultati analize
+                </div>
+                <div class="subtitle" v-if="analysisSummary">{{ analysisSummary }}</div>
+            </div>
+
+            <div class="section-layout">
+                <div class="section-main">
+                    <div class="results-table">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th style="width:60px;">Izberi</th>
+                                    <th>Zahteva</th>
+                                    <th style="width:200px;">Status</th>
+                                    <th>Obrazložitev in popravki</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr v-for="req in requirements" :key="req.id" :class="{ excluded: excludedIds.includes(String(req.id)) }">
+                                    <td>
+                                        <input type="checkbox" :value="String(req.id)" v-model="selectedRequirementIds" :disabled="excludedIds.includes(String(req.id))" />
+                                    </td>
+                                    <td>
+                                        <strong>{{ req.naziv || req.naslov || 'Zahteva' }}</strong>
+                                        <div class="subtitle" v-if="req.clen">{{ req.clen }}</div>
+                                        <div class="subtitle" v-if="req.skupina || req.kategorija">{{ req.skupina || req.kategorija }}</div>
+                                        <button class="btn btn-secondary" style="margin-top:8px;" @click="toggleRequirementExclusion(req.id)">
+                                            {{ excludedIds.includes(String(req.id)) ? 'Vključi v poročilo' : 'Izloči iz končnega poročila' }}
+                                        </button>
+                                    </td>
+                                    <td class="status-cell">
+                                        <div class="status-control">
+                                            <span class="status-pill" :class="statusClass(currentStatus(req.id))">{{ displayStatus(req.id) }}</span>
+                                            <select :value="currentStatus(req.id)" @change="event => updateRequirementStatus(req.id, event.target.value)">
+                                                <option v-for="option in statusOptions" :key="option.value" :value="option.value">{{ option.label }}</option>
+                                            </select>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div class="analysis-editor" :class="{ modified: isResultModified(req.id), active: activeEditorId === stringId(req.id) }" @click="activateEditor(req.id, $event)">
+                                            <div class="analysis-display">
+                                                <div class="analysis-header">
+                                                    <strong>AI ugotovitve</strong>
+                                                    <span v-if="isResultModified(req.id)" class="analysis-tag">Ročno urejeno</span>
+                                                </div>
+                                                <div class="analysis-section">
+                                                    <strong>Ugotovitve</strong>
+                                                    <div :class="{ 'analysis-empty': !analysisFinding(req.id).trim() }">{{ analysisFinding(req.id).trim() ? analysisFinding(req.id) : 'Ni zabeleženih ugotovitev AI.' }}</div>
+                                                </div>
+                                                <div class="analysis-section">
+                                                    <strong>Predlagani ukrep</strong>
+                                                    <div :class="{ 'analysis-empty': !analysisAction(req.id).trim() }">{{ analysisAction(req.id).trim() ? analysisAction(req.id) : 'Ni predlaganega ukrepa.' }}</div>
+                                                </div>
+                                                <div class="analysis-hint">Zadržite miško ali tapnite za urejanje besedila.</div>
+                                            </div>
+                                            <div class="analysis-hover" @click.stop>
+                                                <label :for="`findings-${stringId(req.id)}`">AI ugotovitve</label>
+                                                <textarea :id="`findings-${stringId(req.id)}`" v-model="editableFindings[stringId(req.id)]" :data-editor="stringId(req.id)" data-field="finding" @focus="activateEditor(req.id, $event)" @blur="handleEditorBlur(req.id, $event)" @input="onEditableChange(req.id)"></textarea>
+                                                <label :for="`action-${stringId(req.id)}`">Predlagani ukrep / obrazložitev</label>
+                                                <textarea :id="`action-${stringId(req.id)}`" v-model="editableActions[stringId(req.id)]" :data-editor="stringId(req.id)" data-field="action" @focus="activateEditor(req.id, $event)" @blur="handleEditorBlur(req.id, $event)" @input="onEditableChange(req.id)"></textarea>
+                                                <div class="analysis-hint">Vnesene spremembe se shranijo samodejno.</div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <aside class="section-sidebar">
+                    <div class="sidebar-card">
+                        <h4 class="sidebar-title">Akcije rezultatov</h4>
+                        <p class="sidebar-hint">Izberite nadaljnji korak ali pripravite poročilo za deljenje.</p>
+                        <div class="actions-stack">
+                            <button class="btn btn-outline" @click="rerunNonCompliant" :disabled="isBusy || !latestNonCompliantIds.length" :data-state="actionStates.rerunNonCompliant">Analiziraj neskladne</button>
+                            <button class="btn btn-outline" @click="rerunSelected" :disabled="isBusy || !selectedRequirementIds.length" :data-state="actionStates.rerunSelected">Ponovno preveri izbrane</button>
+                            <button class="btn btn-secondary" @click="resetSelection" :disabled="isBusy">Počisti izbor</button>
+                            <button class="btn btn-outline" @click="saveProgress" :disabled="isBusy || !sessionId" :data-state="actionStates.save">Shrani napredek</button>
+                            <button class="btn btn-primary" @click="confirmReport" :disabled="isBusy || !sessionId" :data-state="actionStates.confirm">Potrdi in ustvari poročilo</button>
+                            <a v-if="downloadReady" class="btn btn-outline" :href="downloadHref" download>Prenesi poročilo (.docx)</a>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </section>
+
+        <footer>
+            &copy; YEAR_PLACEHOLDER – IZDELAVA MNENJA O SKADNOSTI S PIA
+        </footer>
+
+        <div v-if="showSavedModal" class="modal-backdrop" @click.self="showSavedModal = false">
+            <div class="modal-card">
+                <h3>Izberite shranjeno analizo</h3>
+                <div class="subtitle" v-if="savedSessionsLoading">Nalagam shranjene seje...</div>
+                <div v-else>
+                    <p class="subtitle" v-if="!savedSessions.length">Ni shranjenih analiz.</p>
+                    <div v-else class="file-list">
+                        <div class="saved-item" v-for="session in savedSessions" :key="session.session_id">
+                            <strong>{{ session.project_name || 'Neimenovan projekt' }}</strong>
+                            <small>{{ session.summary || 'Brez povzetka' }}</small>
+                            <small>{{ formatTimestamp(session.updated_at) }}</small>
+                            <div class="actions-row" style="margin-top:8px;">
+                                <button class="btn btn-primary" @click="loadSession(session.session_id)">Odpri</button>
+                                <button class="btn btn-secondary" @click="deleteSession(session.session_id)">Izbriši</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="actions-row">
+                    <button class="btn btn-secondary" @click="showSavedModal = false">Zapri</button>
+                </div>
+            </div>
+        </div>
+
+        <div v-if="isBusy" class="spinner-overlay">
+            <div>
+                <div class="spinner"></div>
+                <p class="subtitle" style="margin-top:16px; text-align:center;">{{ busyMessage }}</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <script>
+        const { createApp } = Vue;
+
+        createApp({
+            data() {
+                return {
+                    files: [],
+                    pageOverrides: {},
+                    isDragging: false,
+                    status: { type: 'info', message: '' },
+                    isBusy: false,
+                    busyMessage: '',
+                    sessionId: '',
+                    eupPairs: [],
+                    initialKeyData: {},
+                    keyData: {},
+                    metadata: {},
+                    requirements: [],
+                    resultsMap: {},
+                    editableFindings: {},
+                    editableActions: {},
+                    initialEditableFindings: {},
+                    initialEditableActions: {},
+                    activeEditorId: '',
+                    selectedRequirementIds: [],
+                    excludedIds: [],
+                    requirementRevisions: {},
+                    latestNonCompliantIds: [],
+                    analysisSummary: '',
+                    downloadReady: false,
+                    downloadHref: '',
+                    revisionFiles: [],
+                    revisionPages: '',
+                    revisionInfo: '',
+                    savedSessions: [],
+                    savedSessionsLoading: false,
+                    showSavedModal: false,
+                    highlightedSession: null,
+                    statusOptions: [
+                        { value: '', label: 'NEZNANO' },
+                        { value: 'Skladno', label: 'SKLADNA' },
+                        { value: 'Neskladno', label: 'NESKLADNA' },
+                        { value: 'Ni relevantno', label: 'NI RELEVANTNO' }
+                    ],
+                    statusLabels: {
+                        '': 'NEZNANO', Neznano: 'NEZNANO', neznano: 'NEZNANO',
+                        Skladno: 'SKLADNA', skladno: 'SKLADNA',
+                        Neskladno: 'NESKLADNA', neskladno: 'NESKLADNA',
+                        'Ni relevantno': 'NI RELEVANTNO', 'ni relevantno': 'NI RELEVANTNO'
+                    },
+                    actionStates: { extract: '', run: '', save: '', reset: '', rerunSelected: '', rerunNonCompliant: '', confirm: '', revision: '' },
+                    actionTimers: {},
+                    heroSteps: [
+                        { id: 1, title: 'Naloži dokumente', description: 'Dodajte PDF dokumentacijo.' },
+                        { id: 2, title: 'Preglej osnutek', description: 'AI pripravi osnutek podatkov.' },
+                        { id: 3, title: 'Potrdi in deli', description: 'Pripravite končno poročilo.' }
+                    ],
+                    keyLabels: {
+                        glavni_objekt: 'OBJEKT (opis funkcije)', vrsta_gradnje: 'VRSTA GRADNJE', klasifikacija_cc_si: 'CC-SI klasifikacija',
+                        nezahtevni_objekti: 'Nezahtevni objekti v projektu', enostavni_objekti: 'Enostavni objekti v projektu',
+                        vzdrzevalna_dela: 'Vzdrževalna dela / manjša rekonstrukcija', parcela_objekta: 'Gradbena parcela (št.)',
+                        stevilke_parcel_ko: 'Vse parcele in k.o.', velikost_parcel: 'Skupna velikost parcel',
+                        velikost_obstojecega_objekta: 'Velikost obstoječega objekta', tlorisne_dimenzije: 'Nove tlorisne dimenzije',
+                        gabariti_etaznost: 'Novi gabarit/Etažnost', faktor_zazidanosti_fz: 'Faktor zazidanosti (FZ)',
+                        faktor_izrabe_fi: 'Faktor izrabe (FI)', zelene_povrsine: 'Zelene površine (FZP/m²)',
+                        naklon_strehe: 'Naklon strehe', kritina_barva: 'Kritina/Barva', materiali_gradnje: 'Materiali gradnje (npr. les)',
+                        smer_slemena: 'Smer slemena', visinske_kote: 'Višinske kote (k.p., k.s.)',
+                        odmiki_parcel: 'Odmiki od parcelnih mej', komunalni_prikljucki: 'Komunalni priključki/Oskrba'
+                    },
+                    longFieldKeys: new Set(['stevilke_parcel_ko', 'odmiki_parcel', 'komunalni_prikljucki', 'nezahtevni_objekti', 'enostavni_objekti', 'vzdrzevalna_dela']),
+                    storageKey: 'mnenja-vue-state'
+                };
+            },
+            computed: {
+                keyFieldList() { return Object.entries(this.keyLabels).map(([key, label]) => ({ key, label, isLong: this.longFieldKeys.has(key) })); },
+                heroActiveStep() { if (Array.isArray(this.requirements) && this.requirements.length) return 3; if (this.showReview) return 2; return 1; },
+                showReview() { return !!this.sessionId && this.eupPairs.length > 0; }
+            },
+            methods: {
+                heroStepClass(stepId) { const active = this.heroActiveStep; return { active: stepId === active, completed: stepId < active }; },
+                setStatus(type, message) { this.status = { type, message }; },
+                setActionState(key, state, options = {}) {
+                    if (!key || !(key in this.actionStates)) return;
+                    const { autoClear = state === 'success' || state === 'error', timeout = 2200 } = options;
+                    if (this.actionTimers[key]) { clearTimeout(this.actionTimers[key]); delete this.actionTimers[key]; }
+                    this.actionStates[key] = state;
+                    if (autoClear && state) {
+                        this.actionTimers[key] = setTimeout(() => {
+                            if (this.actionStates[key] === state) this.actionStates[key] = '';
+                            delete this.actionTimers[key];
+                        }, timeout);
+                    }
+                },
+                markActionWorking(key) { this.setActionState(key, 'working', { autoClear: false }); },
+                markActionResult(key, state) { const validState = state === 'success' ? 'success' : state === 'error' ? 'error' : ''; this.setActionState(key, validState); },
+                startLoading(message) { this.isBusy = true; this.busyMessage = message; this.setStatus('info', message); },
+                stopLoading(type = 'info', message = '') { this.isBusy = false; this.busyMessage = ''; if (message) this.setStatus(type, message); },
+                stringId(value) { return (value === undefined || value === null) ? '' : String(value); },
+                ensureText(value) { try { return (value === undefined || value === null) ? '' : String(value); } catch { return ''; } },
+                normalizeResultsMap(data) {
+                    const normalized = {};
+                    if (data && typeof data === 'object') {
+                        Object.entries(data).forEach(([key, value]) => {
+                            const safeKey = this.stringId(value?.id ?? key);
+                            normalized[safeKey] = (value && typeof value === 'object') ? { ...value, id: safeKey } : { id: safeKey };
+                        });
+                    }
+                    return normalized;
+                },
+                ensureResultEntry(id) {
+                    const key = this.stringId(id);
+                    if (!this.resultsMap[key]) this.resultsMap[key] = { id: key };
+                    return this.resultsMap[key];
+                },
+                applyEditableValuesToResult(id, finding, action) {
+                    const entry = this.ensureResultEntry(id);
+                    entry.obrazlozitev = this.ensureText(finding);
+                    entry.predlagani_ukrep = this.ensureText(action);
+                },
+                prepareEditableResults() {
+                    const nextEditableFindings = {}, nextEditableActions = {}, nextInitialFindings = {}, nextInitialActions = {};
+                    const allKnownIds = new Set([...Object.keys(this.resultsMap), ...(this.requirements || []).map(r => this.stringId(r.id))]);
+                    allKnownIds.forEach(key => {
+                        if (!key) return;
+                        const result = this.resultsMap[key] || {};
+                        const finding = this.ensureText(result.obrazlozitev || '');
+                        const action = this.ensureText(result.predlagani_ukrep || '');
+                        nextInitialFindings[key] = finding;
+                        nextInitialActions[key] = action;
+                        nextEditableFindings[key] = finding;
+                        nextEditableActions[key] = action;
+                    });
+                    this.initialEditableFindings = nextInitialFindings;
+                    this.initialEditableActions = nextInitialActions;
+                    this.editableFindings = nextEditableFindings;
+                    this.editableActions = nextEditableActions;
+                },
+                analysisFinding(id) { return this.editableFindings[this.stringId(id)] || ''; },
+                analysisAction(id) { return this.editableActions[this.stringId(id)] || ''; },
+                isResultModified(id) {
+                    const key = this.stringId(id);
+                    return this.analysisFinding(key) !== (this.initialEditableFindings[key] || '') || this.analysisAction(key) !== (this.initialEditableActions[key] || '');
+                },
+                onEditableChange(id) {
+                    const key = this.stringId(id);
+                    this.applyEditableValuesToResult(key, this.editableFindings[key], this.editableActions[key]);
+                    this.persistState(true);
+                },
+                activateEditor(id, event) {
+                    const key = this.stringId(id);
+                    this.activeEditorId = key;
+                    if (!event || event.target.tagName !== 'TEXTAREA') {
+                        this.$nextTick(() => {
+                            const textarea = this.$el?.querySelector(`textarea[data-editor="${key}"]`);
+                            textarea?.focus();
+                        });
+                    }
+                },
+                handleEditorBlur(id, event) {
+                    const key = this.stringId(id);
+                    if (event.relatedTarget?.dataset?.editor !== key && this.activeEditorId === key) {
+                        this.activeEditorId = '';
+                    }
+                },
+                formatFileSize(size) {
+                    if (!size) return '0 B';
+                    const units = ['B', 'KB', 'MB', 'GB']; let i = 0;
+                    while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
+                    return `${size.toFixed(i === 0 ? 0 : 2)} ${units[i]}`;
+                },
+                formatTimestamp(value) {
+                    try { return new Date(value).toLocaleString('sl-SI'); } catch { return ''; }
+                },
+                handleFileSelect(event) { this.appendFiles(Array.from(event.target.files || [])); event.target.value = ''; },
+                handleDrop(event) { this.appendFiles(Array.from(event.dataTransfer.files || [])); this.isDragging = false; },
+                appendFiles(list) {
+                    const pdfFiles = list.filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+                    pdfFiles.forEach(file => this.files.push({ id: `${Date.now()}-${file.name}`, file }));
+                    if (!pdfFiles.length) this.setStatus('error', 'Dodani morajo biti PDF dokumenti.');
+                },
+                removeFile(id) { this.files = this.files.filter(item => item.id !== id); delete this.pageOverrides[id]; },
+                pairModified(pair) { return (pair.eup || '').trim() !== (pair.originalEup || '').trim() || (pair.raba || '').trim() !== (pair.originalRaba || '').trim(); },
+                addPair() { this.eupPairs.push({ id: Date.now(), eup: '', raba: '', originalEup: '', originalRaba: '' }); },
+                removePair(index) { this.eupPairs.splice(index, 1); if (!this.eupPairs.length) this.addPair(); },
+                keyFieldModified(key) { return (this.keyData[key] || '').trim() !== (this.initialKeyData[key] || '').trim(); },
+                async extractData() {
+                    if (!this.files.length) { this.setStatus('error', 'Prosim naložite vsaj eno PDF datoteko.'); return; }
+                    this.markActionWorking('extract');
+                    const formData = new FormData();
+                    const manifest = this.files.map(item => ({ name: item.file.name, pages: (this.pageOverrides[item.id] || '').trim() }));
+                    this.files.forEach(item => formData.append('pdf_files', item.file));
+                    formData.append('files_meta_json', JSON.stringify(manifest));
+                    this.startLoading('Analiziram dokumente in pripravljam podatke...');
+                    try {
+                        const response = await fetch('/extract-data', { method: 'POST', body: formData });
+                        if (!response.ok) throw new Error((await response.json()).detail || 'Napaka pri ekstrakciji.');
+                        const data = await response.json();
+                        this.sessionId = data.session_id;
+                        this.preparePairs(data.eup, data.namenska_raba);
+                        this.prepareKeyData(data);
+                        this.requirements = []; this.resultsMap = {}; this.prepareEditableResults();
+                        this.persistState(true);
+                        this.markActionResult('extract', 'success');
+                        this.stopLoading('success', 'Ekstrakcija uspešna. Preglejte predloge in nadaljujte.');
+                    } catch (error) { this.markActionResult('extract', 'error'); this.stopLoading('error', error.message); }
+                },
+                preparePairs(eupList = [], rabaList = []) {
+                    this.eupPairs = []; const max = Math.max(eupList.length, rabaList.length);
+                    if (!max) { this.addPair(); return; }
+                    for (let i = 0; i < max; i++) {
+                        const eup = eupList[i] || '', raba = rabaList[i] || '';
+                        this.eupPairs.push({ id: Date.now() + i, eup, raba, originalEup: eup, originalRaba: raba });
+                    }
+                },
+                prepareKeyData(data) {
+                    this.initialKeyData = {}; this.keyData = {};
+                    Object.keys(this.keyLabels).forEach(key => {
+                        const val = data[key] || 'Ni podatka v dokumentaciji';
+                        this.initialKeyData[key] = val; this.keyData[key] = val;
+                    });
+                    this.metadata = { ime_projekta: data.ime_projekta, stevilka_projekta: data.stevilka_projekta };
+                },
+                async runAnalysis(extra = {}) {
+                    if (!this.sessionId) { this.setStatus('error', 'Seja ni aktivna.'); return; }
+                    const actionKey = extra.actionKey || (extra.isRerun ? (extra.selectedIds.length === this.latestNonCompliantIds.length ? 'rerunNonCompliant' : 'rerunSelected') : 'run');
+                    this.markActionWorking(actionKey);
+                    
+                    const payload = {
+                        session_id: this.sessionId,
+                        final_eup_list: this.eupPairs.map(p => (p.eup || '').trim()).filter(Boolean),
+                        final_raba_list: this.eupPairs.map(p => (p.raba || '').trim()).filter(Boolean),
+                        key_data: { ...this.keyData },
+                        selected_ids: extra.selectedIds || [],
+                        existing_results_map: this.resultsMap || {}
+                    };
+
+                    this.startLoading(extra.isRerun ? 'Ponovno preverjam izbrane zahteve...' : 'Izvajam podrobno analizo...');
+                    try {
+                        const response = await fetch('/analyze-report', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (!response.ok) {
+                            const error = await response.json().catch(() => ({}));
+                            throw new Error(error.detail || 'Napaka pri analizi.');
+                        }
+                        const result = await response.json();
+                        this.resultsMap = this.normalizeResultsMap(result.results_map || {});
+                        this.requirements = Array.isArray(result.zahteve) ? result.zahteve : [];
+                        this.prepareEditableResults();
+                        this.requirementRevisions = result.requirement_revisions || {};
+                        this.latestNonCompliantIds = this.computeNonCompliantIds();
+                        this.analysisSummary = this.buildAnalysisSummary(result);
+                        this.selectedRequirementIds = this.latestNonCompliantIds.slice();
+                        this.persistState(true);
+                        this.markActionResult(actionKey, 'success');
+                        this.stopLoading('success', 'Analiza zaključena.');
+                    } catch (error) {
+                        this.markActionResult(actionKey, 'error');
+                        this.stopLoading('error', error.message);
+                    }
+                },
+                buildAnalysisSummary(result) {
+                    const total = this.requirements.length;
+                    const nonCompliant = this.latestNonCompliantIds.length;
+                    return `Analiziranih ${total} zahtev. Neskladnih: ${nonCompliant}.`;
+                },
+                statusClass(text) {
+                    if (!text) return 'neznano'; const normalized = text.toLowerCase();
+                    if (normalized.includes('nesklad')) return 'neskladno';
+                    if (normalized.includes('sklad')) return 'skladno';
+                    if (normalized.includes('ni relevantno')) return 'ni-relevantno';
+                    return 'neznano';
+                },
+                currentStatus(id) { return this.resultsMap[this.stringId(id)]?.skladnost || ''; },
+                displayStatus(id) { const status = this.currentStatus(id); return this.statusLabels[status] || status || 'NEZNANO'; },
+                updateRequirementStatus(id, value) {
+                    this.ensureResultEntry(id).skladnost = value;
+                    this.latestNonCompliantIds = this.computeNonCompliantIds();
+                    this.persistState(true);
+                },
+                resetSelection() { this.selectedRequirementIds = []; },
+                rerunSelected() {
+                    if (!this.selectedRequirementIds.length) { this.setStatus('error', 'Najprej izberite zahteve.'); return; }
+                    this.runAnalysis({ selectedIds: this.selectedRequirementIds, isRerun: true });
+                },
+                rerunNonCompliant() {
+                    if (!this.latestNonCompliantIds.length) { this.setStatus('error', 'Ni neskladnih zahtev za ponovno analizo.'); return; }
+                    this.runAnalysis({ selectedIds: this.latestNonCompliantIds, isRerun: true });
+                },
+                toggleRequirementExclusion(id) {
+                    const key = String(id);
+                    if (this.excludedIds.includes(key)) {
+                        this.excludedIds = this.excludedIds.filter(item => item !== key);
+                    } else {
+                        this.excludedIds = [...this.excludedIds, key];
+                    }
+                    this.persistState(true);
+                },
+                async confirmReport() {
+                    this.markActionWorking('confirm'); this.startLoading('Pripravljam poročilo...');
+                    try {
+                        const response = await fetch('/confirm-report', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ session_id: this.sessionId, excluded_ids: this.excludedIds })
+                        });
+                        if (!response.ok) throw new Error((await response.json()).detail || 'Generiranje ni uspelo.');
+                        const result = await response.json(); this.downloadReady = true; this.downloadHref = '/download';
+                        this.markActionResult('confirm', 'success'); this.stopLoading('success', 'Poročilo je pripravljeno.');
+                    } catch (error) { this.markActionResult('confirm', 'error'); this.stopLoading('error', error.message); }
+                },
+                collectState() {
+                    if (!this.sessionId) return null;
+                    return {
+                        sessionId: this.sessionId, eupPairs: this.eupPairs, keyData: this.keyData,
+                        initialKeyData: this.initialKeyData, metadata: this.metadata, requirements: this.requirements,
+                        resultsMap: this.resultsMap, editableFindings: this.editableFindings,
+                        editableActions: this.editableActions, initialEditableFindings: this.initialEditableFindings,
+                        initialEditableActions: this.initialEditableActions, selectedRequirementIds: this.selectedRequirementIds,
+                        excludedIds: this.excludedIds, requirementRevisions: this.requirementRevisions,
+                        latestNonCompliantIds: this.latestNonCompliantIds, analysisSummary: this.analysisSummary,
+                        downloadReady: this.downloadReady, revisionInfo: this.revisionInfo, timestamp: new Date().toISOString()
+                    };
+                },
+                persistState(auto = false) {
+                    const state = this.collectState(); if (!state) return;
+                    try { localStorage.setItem(this.storageKey, JSON.stringify(state)); } catch (error) { console.warn('Shranjevanje ni uspelo:', error); }
+                },
+                restoreFromLocal() {
+                    try {
+                        const raw = localStorage.getItem(this.storageKey); if (!raw) return;
+                        const state = JSON.parse(raw); if (!state || !state.sessionId) return;
+                        Object.keys(state).forEach(key => this[key] = state[key]);
+                        this.setStatus('success', 'Obnovljena je bila lokalno shranjena seja.');
+                        this.highlightedSession = { ...state, source: 'local' };
+                    } catch (error) { console.warn('Ni mogoče obnoviti seje:', error); }
+                },
+                async saveProgress() {
+                    const state = this.collectState(); if (!state) { this.markActionResult('save', 'error'); return; }
+                    this.markActionWorking('save'); this.persistState(); this.startLoading('Shranjujem analizo...');
+                    try {
+                        await fetch('/save-session', {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                session_id: this.sessionId, data: state,
+                                project_name: state.metadata?.ime_projekta || undefined,
+                                summary: this.analysisSummary || undefined
+                            })
+                        });
+                        this.fetchSavedSessions(true); this.markActionResult('save', 'success');
+                        this.stopLoading('success', 'Analiza je shranjena.');
+                    } catch (error) { this.markActionResult('save', 'error'); this.stopLoading('error', 'Shranjevanje ni uspelo.'); }
+                },
+                async fetchSavedSessions(force = false) {
+                    if (this.savedSessionsLoading) return;
+                    this.savedSessionsLoading = true;
+                    try {
+                        const response = await fetch('/saved-sessions');
+                        const data = await response.json();
+                        this.savedSessions = (data.sessions || []).map(s => ({ ...s, source: 'remote' }));
+                        if (this.savedSessions.length && (!this.highlightedSession || this.highlightedSession.source === 'local')) {
+                            this.highlightedSession = this.savedSessions[0];
+                        }
+                    } catch (error) { console.warn(error); } finally { this.savedSessionsLoading = false; }
+                },
+                openSavedModal() { this.showSavedModal = true; this.fetchSavedSessions(true); },
+                async loadSession(sessionId) {
+                    this.startLoading('Nalagam shranjeno analizo...');
+                    try {
+                        const response = await fetch(`/saved-sessions/${sessionId}`);
+                        const record = await response.json();
+                        if (!record || !record.data) throw new Error('Shranjena analiza je prazna.');
+                        localStorage.setItem(this.storageKey, JSON.stringify(record.data));
+                        this.showSavedModal = false; this.stopLoading('success', 'Naloženo.'); this.restoreFromLocal();
+                    } catch (error) { this.stopLoading('error', error.message); }
+                },
+                async deleteSession(sessionId) {
+                    try {
+                        await fetch(`/saved-sessions/${sessionId}`, { method: 'DELETE' });
+                        this.fetchSavedSessions(true); this.setStatus('success', 'Analiza izbrisana.');
+                    } catch (error) { this.setStatus('error', 'Brisanje ni uspelo.'); }
+                },
+                restoreHighlighted() {
+                    if (!this.highlightedSession) return;
+                    if (this.highlightedSession.source === 'remote') this.loadSession(this.highlightedSession.session_id);
+                    else this.restoreFromLocal();
+                },
+                discardHighlighted() {
+                    localStorage.removeItem(this.storageKey);
+                    if (this.highlightedSession?.source === 'remote') this.deleteSession(this.highlightedSession.session_id);
+                    else this.setStatus('success', 'Lokalna seja odstranjena.');
+                    this.highlightedSession = this.savedSessions.length ? this.savedSessions[0] : null;
+                }
+            },
+            mounted() {
+                this.restoreFromLocal();
+                this.fetchSavedSessions();
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
