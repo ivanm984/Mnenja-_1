@@ -68,17 +68,19 @@ async def save_session(payload: SaveSessionPayload):
 @router.get("/saved-sessions")
 async def list_saved_sessions() -> Dict[str, List[Dict[str, Any]]]:
     rows = await db_manager.fetch_sessions()
-    return {
-        "sessions": [
+    sessions: List[Dict[str, Any]] = []
+    for row in rows:
+        row_data = dict(row)
+        sessions.append(
             {
-                "session_id": row["session_id"],
-                "project_name": row.get("project_name") or "Neimenovan projekt",
-                "summary": row.get("summary") or "",
-                "updated_at": row.get("updated_at"),
+                "session_id": row_data.get("session_id"),
+                "project_name": row_data.get("project_name") or "Neimenovan projekt",
+                "summary": row_data.get("summary") or "",
+                "updated_at": row_data.get("updated_at"),
             }
-            for row in rows
-        ]
-    }
+        )
+
+    return {"sessions": sessions}
 
 @router.get("/saved-sessions/{session_id}")
 async def get_saved_session(session_id: str):
