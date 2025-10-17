@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -269,18 +270,32 @@ async def confirm_report(payload: ConfirmReportPayload, background_tasks: Backgr
     reports_dir = Path("reports")
     reports_dir.mkdir(exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    
-    docx_output = reports_dir / f"Porocilo_Skladnosti_{timestamp}.docx"
+
+    metadata = cache.get("metadata", {})
+    investor_name = (metadata.get("investitor") or "").strip()
+    if investor_name:
+        safe_investor = re.sub(r"\s+", "_", investor_name, flags=re.UNICODE)
+        safe_investor = re.sub(r"[^\w.-]", "", safe_investor, flags=re.UNICODE)
+        if not safe_investor:
+            safe_investor = "Neznan_investitor"
+        docx_filename = f"Poročilo_skladnosti_{safe_investor}.docx"
+    else:
+        docx_filename = f"Poročilo_skladnosti_{timestamp}.docx"
+
+    docx_output = reports_dir / docx_filename
+    if docx_output.exists():
+        docx_output = reports_dir / f"{docx_output.stem}_{timestamp}{docx_output.suffix}"
+
     xlsx_output = reports_dir / f"Priloga10A_{timestamp}.xlsx"
 
     try:
         docx_path = await asyncio.to_thread(
             generate_word_report,
-            filtered_zahteve, cache.get("results_map", {}), cache.get("metadata", {}), str(docx_output)
+            filtered_zahteve, cache.get("results_map", {}), metadata, str(docx_output)
         )
         xlsx_path = await asyncio.to_thread(
             generate_priloga_10a,
-            filtered_zahteve, cache.get("results_map", {}), cache.get("metadata", {}),
+            filtered_zahteve, cache.get("results_map", {}), metadata,
             cache.get("final_key_data", {}), cache.get("source_files", []), str(xlsx_output)
         )
     except Exception as e:

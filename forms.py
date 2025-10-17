@@ -70,44 +70,32 @@ def _format_predpis(zahteve: Iterable[Dict[str, Any]]) -> str:
     return "\n".join(seen)
 
 
-def _format_conditions(zahteve: Iterable[Dict[str, Any]], results_map: Dict[str, Dict[str, Any]]) -> str:
-    entries: List[str] = []
-    for zahteva in zahteve:
-        zid = zahteva.get("id")
-        result = results_map.get(zid, {}) if zid else {}
-        status = _clean(result.get("skladnost", "Neznano"))
-        obrazlozitev = _clean(result.get("obrazlozitev", ""), "")
-        ukrep = _clean(result.get("predlagani_ukrep", ""), "")
-        parts: List[str] = []
-        if obrazlozitev and obrazlozitev != "—":
-            parts.append(obrazlozitev)
-        if ukrep and ukrep not in {"—", "Ni ukrepov"}:
-            parts.append(f"Predlagani ukrep: {ukrep}")
-        detail = " ".join(parts)
-        naslov = _clean(zahteva.get("naslov", "Zahteva"))
-        if detail:
-            entries.append(f"• {naslov} – {status}. {detail}")
-        else:
-            entries.append(f"• {naslov} – {status}.")
-    if not entries:
-        return "Ni vnosov pogojev iz analize."
-    return "\n".join(entries)
-
-
-def _format_obrazlozitev(total: int, non_compliant: List[str], compliant: List[str]) -> str:
-    summary = [
+def _format_obrazlozitev(
+    total: int, non_compliant: List[str], compliant: List[str], key_data_text: str
+) -> str:
+    lines = [
         f"Analiziranih pogojev: {total}",
         f"Neskladnih pogojev: {len(non_compliant)}",
         f"Skladnih pogojev: {len(compliant)}",
     ]
-    details: List[str] = []
+
     if non_compliant:
-        details.append("Neskladja:")
-        details.extend([f"  • {item}" for item in non_compliant])
+        lines.append("")
+        lines.append("Neskladni členi:")
+        lines.extend([f"  • {item}" for item in non_compliant])
+
     if compliant:
-        details.append("Skladni pogoji:")
-        details.extend([f"  • {item}" for item in compliant])
-    return "\n".join(summary + ([""] + details if details else []))
+        lines.append("")
+        lines.append("Skladni členi:")
+        lines.extend([f"  • {item}" for item in compliant])
+
+    cleaned_key_data = key_data_text.strip()
+    if cleaned_key_data:
+        lines.append("")
+        lines.append("Ključni podatki projekta:")
+        lines.append(cleaned_key_data)
+
+    return "\n".join(lines)
 
 
 def _summarize_results(zahteve: Iterable[Dict[str, Any]], results_map: Dict[str, Dict[str, Any]]):
@@ -161,26 +149,6 @@ def _set_cell_value(worksheet, cell: str, value: Any) -> None:
         raise exc
 
 
-def _get_cell_value(worksheet, cell: str) -> Any:
-    try:
-        return worksheet[cell].value
-    except AttributeError as exc:
-        if "MergedCell" not in str(exc):
-            raise
-
-        row, column = coordinate_to_tuple(cell)
-        for merged_range in worksheet.merged_cells.ranges:
-            if (
-                merged_range.min_row <= row <= merged_range.max_row
-                and merged_range.min_col <= column <= merged_range.max_col
-            ):
-                return worksheet.cell(
-                    row=merged_range.min_row, column=merged_range.min_col
-                ).value
-
-        raise exc
-
-
 def generate_priloga_10a(
     zahteve: List[Dict[str, Any]],
     results_map: Dict[str, Dict[str, Any]],
@@ -198,27 +166,27 @@ def generate_priloga_10a(
     project_name = _clean(metadata.get("ime_projekta", "Ni podatka"))
     _set_cell_value(
         worksheet,
-        "B4",
+        "C4",
         f"Mnenje o skladnosti – {project_name}" if project_name else "Mnenje o skladnosti",
     )
-    _set_cell_value(worksheet, "B7", _clean(metadata.get("mnenjedajalec", "Avtomatski pregled skladnosti")))
-    _set_cell_value(worksheet, "B9", _clean(metadata.get("stevilka_porocila", "Ni podatka")))
-    _set_cell_value(worksheet, "B10", datetime.now().strftime("%d.%m.%Y"))
-    _set_cell_value(worksheet, "B11", _format_predpis(zahteve))
-    _set_cell_value(worksheet, "B12", _clean(metadata.get("postopek_vodil", "Ni podatka")))
-    _set_cell_value(worksheet, "B14", _clean(metadata.get("odgovorna_oseba", "Ni podatka")))
+    _set_cell_value(worksheet, "C7", _clean(metadata.get("mnenjedajalec", "Avtomatski pregled skladnosti")))
+    _set_cell_value(worksheet, "C9", _clean(metadata.get("stevilka_porocila", "Ni podatka")))
+    _set_cell_value(worksheet, "C10", datetime.now().strftime("%d.%m.%Y"))
+    _set_cell_value(worksheet, "C11", _format_predpis(zahteve))
+    _set_cell_value(worksheet, "C12", _clean(metadata.get("postopek_vodil", "Ni podatka")))
+    _set_cell_value(worksheet, "C14", _clean(metadata.get("odgovorna_oseba", "Ni podatka")))
 
-    _set_cell_value(worksheet, "B34", project_name)
+    _set_cell_value(worksheet, "C34", project_name)
     _set_cell_value(
         worksheet,
-        "B35",
+        "C35",
         _clean(metadata.get("kratek_opis", key_data.get("vrsta_gradnje", "Ni podatka"))),
     )
-    _set_cell_value(worksheet, "B37", _clean(metadata.get("stevilka_projekta", "Ni podatka")))
-    _set_cell_value(worksheet, "B38", _clean(metadata.get("datum_projekta", "Ni podatka")))
-    _set_cell_value(worksheet, "B39", _clean(metadata.get("projektant", "Ni podatka")))
+    _set_cell_value(worksheet, "C37", _clean(metadata.get("stevilka_projekta", "Ni podatka")))
+    _set_cell_value(worksheet, "C38", _clean(metadata.get("datum_projekta", "Ni podatka")))
+    _set_cell_value(worksheet, "C39", _clean(metadata.get("projektant", "Ni podatka")))
 
-    _set_cell_value(worksheet, "D47", _format_source_files(source_files))
+    _set_cell_value(worksheet, "C47", _format_source_files(source_files))
 
     compliant, non_compliant = _summarize_results(zahteve, results_map)
     total = len(zahteve)
@@ -226,25 +194,19 @@ def generate_priloga_10a(
     _set_cell_value(worksheet, "B48", "X" if overall_skladnost == "SKLADNA" else "")
     _set_cell_value(worksheet, "B49", "X" if overall_skladnost == "NESKLADNA" else "")
 
-    pogoji_text = _format_conditions(zahteve, results_map)
-    _set_cell_value(worksheet, "C52", pogoji_text)
-    _set_cell_value(worksheet, "C53", pogoji_text)
-    _set_cell_value(worksheet, "C54", pogoji_text)
+    _set_cell_value(worksheet, "C52", "")
+    _set_cell_value(worksheet, "C53", "")
+    _set_cell_value(worksheet, "C54", "")
 
-    _set_cell_value(worksheet, "C57", _format_obrazlozitev(total, non_compliant, compliant))
+    key_data_text = _format_key_data(key_data)
+    obrazlozitev_text = _format_obrazlozitev(total, non_compliant, compliant, key_data_text)
+    _set_cell_value(worksheet, "C57", obrazlozitev_text)
     _set_cell_value(
         worksheet,
         "C62",
         f"Gradnja je {overall_skladnost.lower()} glede na preverjene pogoje." if total else "Analiza pogojev ni bila izvedena."
     )
-    _set_cell_value(worksheet, "B40", _clean(metadata.get("pvo_status", "Ni podatka")))
-
-    existing_c52 = _get_cell_value(worksheet, "C52") or ""
-    _set_cell_value(
-        worksheet,
-        "C52",
-        f"{existing_c52}\n\nKljučni podatki projekta:\n{_format_key_data(key_data)}",
-    )
+    _set_cell_value(worksheet, "C40", _clean(metadata.get("pvo_status", "Ni podatka")))
 
     output_file = Path(output_path)
     output_file.parent.mkdir(parents=True, exist_ok=True)
