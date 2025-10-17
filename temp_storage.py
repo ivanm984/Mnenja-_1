@@ -3,6 +3,7 @@
 import asyncio
 import io
 import logging
+import re
 import shutil
 from pathlib import Path
 from typing import List
@@ -18,12 +19,22 @@ async def save_images_for_session(session_id: str, images: List[Image.Image]) ->
     """Asinhrono shrani PIL slike na disk in vrne seznam njihovih poti."""
     session_dir = TEMP_STORAGE_PATH / session_id
     session_dir.mkdir(exist_ok=True, parents=True)
-    
+
+    existing_indices = []
+    for path in session_dir.glob("image_*.png"):
+        match = re.search(r"image_(\d+)\.png$", path.name)
+        if match:
+            try:
+                existing_indices.append(int(match.group(1)))
+            except ValueError:
+                continue
+    start_index = max(existing_indices, default=0)
+
     saved_paths = []
     tasks = []
 
-    for i, img in enumerate(images):
-        img_path = session_dir / f"image_{i+1}.png"
+    for offset, img in enumerate(images, start=1):
+        img_path = session_dir / f"image_{start_index + offset}.png"
         tasks.append(_save_single_image(img, img_path))
         saved_paths.append(str(img_path))
     
