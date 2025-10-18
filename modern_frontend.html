@@ -616,11 +616,7 @@
 
             // PDF Viewer Methods
             async openPdfViewer(fileIndex) {
-                const fileItem = this.files[fileIndex];
-                if (!fileItem) return;
-                
-                // fileItem ima strukturo: { id: ..., file: File }
-                const file = fileItem.file;
+                const file = this.files[fileIndex];
                 if (!file || file.type !== 'application/pdf') return;
                 
                 this.currentPdfFile = file;
@@ -736,7 +732,7 @@
                 
                 try {
                     const formData = new FormData();
-                    this.files.forEach(f => formData.append('pdf_files', f.file));
+                    this.files.forEach(file => formData.append('pdf_files', file));
                     formData.append('municipality_slug', 'litija');
                     formData.append('files_meta_json', JSON.stringify(Object.values(this.filesMeta)));
                     
@@ -1087,9 +1083,20 @@
                 this.showLoading('Pripravljam poročilo z vašimi spremembami...');
                 
                 try {
+                    const updatedResults = {};
+                    this.results.forEach(result => {
+                        updatedResults[String(result.id)] = {
+                            skladnost: result.skladnost,
+                            obrazlozitev: result.explanation || '',
+                            evidence: result.evidence || ''
+                        };
+                    });
+
                     const payload = {
                         session_id: this.sessionId,
-                        excluded_ids: []
+                        excluded_ids: [],
+                        updated_results_map: updatedResults,
+                        updated_key_data: this.keyData
                     };
                     
                     const response = await fetch('/confirm-report', {
