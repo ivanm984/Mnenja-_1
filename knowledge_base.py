@@ -3,7 +3,8 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, List, Tuple
+from functools import lru_cache
+from typing import Any, Dict, List, Optional, Pattern, Tuple
 
 from .config import DEFAULT_MUNICIPALITY_NAME, DEFAULT_MUNICIPALITY_SLUG
 from .knowledge_store import knowledge_repository
@@ -47,6 +48,11 @@ KEYWORD_TO_CLEN = {
     "invalid": "97_clen", "dostop za invalide": "97_clen", "arhitektonske ovire": "97_clen",
 }
 
+KEYWORD_PATTERNS: Dict[str, Pattern[str]] = {
+    keyword: re.compile(re.escape(keyword), re.IGNORECASE)
+    for keyword in KEYWORD_TO_CLEN
+}
+
 
 def format_structured_content(data_dict: Dict[str, Any]) -> str:
     lines = []
@@ -73,6 +79,7 @@ def format_uredba_summary(uredba_data: Dict[str, Any]) -> str:
         return str(uredba_data)
 
 
+@lru_cache(maxsize=4)
 def load_knowledge_base(
     municipality_slug: str | None = None,
 ) -> Tuple[Dict, Dict, List, Dict, str, str]:
@@ -134,14 +141,15 @@ def load_knowledge_base(
     return opn_katalog, priloge, unique_eups, clen_data_map, izrazi_text, uredba_text
 
 
-OPN_KATALOG, PRILOGE, ALL_EUPS, CLEN_DATA_MAP, IZRAZI_TEXT, UREDBA_TEXT = load_knowledge_base()
-
-
 def normalize_eup(eup_str: str) -> str:
     return eup_str.strip().upper() if eup_str else ""
 
 
-def extract_referenced_namenske_rabe(content: str) -> List[str]:
+def extract_referenced_namenske_rabe(
+    content: str, clen_data_map: Optional[Dict[str, Any]] = None
+) -> List[str]:
+    if clen_data_map is None:
+        _, _, _, clen_data_map, _, _ = load_knowledge_base()
     referenced = [
         m.upper()
         for pattern in [
@@ -156,11 +164,15 @@ def extract_referenced_namenske_rabe(content: str) -> List[str]:
         ]
         for m in re.findall(pattern, content, re.IGNORECASE)
     ]
-    return [r for r in set(referenced) if r in CLEN_DATA_MAP]
+    return [r for r in set(referenced) if r in clen_data_map]
 
 
-def build_priloga1_text(namenska_raba: str) -> str:
-    priloga1_data = PRILOGE.get("priloga1", {})
+def build_priloga1_text(
+    namenska_raba: str, priloge: Optional[Dict[str, Any]] = None
+) -> str:
+    if priloge is None:
+        _, priloge, _, _, _, _ = load_knowledge_base()
+    priloga1_data = priloge.get("priloga1", {})
     if not priloga1_data:
         return "Priloga 1 ni na voljo."
 
@@ -208,66 +220,89 @@ def build_priloga1_text(namenska_raba: str) -> str:
     return "\n".join(lines)
 
 
-def build_requirements_from_db(eup_list: List[str], raba_list: List[str], project_text: str) -> List[Dict[str, Any]]:
+def build_requirements_from_db(
+    eup_list: List[str], raba_list: List[str], project_text: str
+) -> List[Dict[str, Any]]:
+    opn_katalog, priloge, _, clen_data_map, _, _ = load_knowledge_base()
+
     zahteve: List[Dict[str, Any]] = []
     dodani_cleni, dodane_namenske_rabe = set(), set()
-    splosni_pogoji_katalog = OPN_KATALOG.get("splosni_prostorski_izvedbeni_pogoji", {})
+    splosni_pogoji_katalog = opn_katalog.get(
+        "splosni_prostorski_izvedbeni_pogoji", {}
+    )
+    original_rabe_upper = {
+        r.strip().upper()
+        for r in raba_list
+        if isinstance(r, str) and r.strip()
+    }
+
+    triggered_optional_cleni: set[str] = set()
+    if project_text:
+        for keyword, pattern in KEYWORD_PATTERNS.items():
+            if pattern.search(project_text):
+                triggered_optional_cleni.add(KEYWORD_TO_CLEN[keyword])
 
     def add_podrobni_pogoji(raba_key: str, kategorija: str) -> None:
         raba_key = raba_key.upper()
-        if raba_key in dodane_namenske_rabe or raba_key not in CLEN_DATA_MAP:
+        if raba_key in dodane_namenske_rabe:
+            return
+        clen_data = clen_data_map.get(raba_key)
+        if not clen_data:
             return
 
-        clen_data = CLEN_DATA_MAP.get(raba_key)
         naslov = (
             f"{clen_data['parent_clen_key'].replace('_clen', '')}. člen - "
             f"{clen_data['podrocje_naziv']} ({raba_key})"
         )
         content = format_structured_content(clen_data["content_structured"])
         clen_label = f"{clen_data['parent_clen_key'].replace('_clen', '')}. člen"
-        zahteve.append({
-            "kategorija": kategorija,
-            "naslov": naslov,
-            "besedilo": content,
-            "clen": clen_label,
-        })
+        zahteve.append(
+            {
+                "kategorija": kategorija,
+                "naslov": naslov,
+                "besedilo": content,
+                "clen": clen_label,
+            }
+        )
         dodane_namenske_rabe.add(raba_key)
         dodani_cleni.add(clen_data["parent_clen_key"])
 
-        for ref_raba in extract_referenced_namenske_rabe(content):
-            if ref_raba not in raba_list:
+        for ref_raba in extract_referenced_namenske_rabe(content, clen_data_map):
+            if ref_raba not in original_rabe_upper:
                 add_podrobni_pogoji(ref_raba, kategorija + " - Napotilo")
 
     for i in range(52, 104):
         clen_key = f"{i}_clen"
         is_mandatory = i <= 66
-        keyword_match, trigger_keyword = False, ""
-        if not is_mandatory:
-            for keyword, mapped_clen in KEYWORD_TO_CLEN.items():
-                if mapped_clen == clen_key and re.search(keyword, project_text, re.IGNORECASE):
-                    keyword_match, trigger_keyword = True, keyword
-                    break
-        if (is_mandatory or keyword_match) and clen_key not in dodani_cleni:
-            content = splosni_pogoji_katalog.get(clen_key)
-            if not content:
-                continue
-            naslov_match = re.search(r"^\s*\(([^)]+)\)", content)
-            naslov = f"{i}. člen ({naslov_match.group(1)})" if naslov_match else f"{i}. člen"
-            clen_label = f"{i}. člen"
-            zahteve.append({
+        if not is_mandatory and clen_key not in triggered_optional_cleni:
+            continue
+        if clen_key in dodani_cleni:
+            continue
+
+        content = splosni_pogoji_katalog.get(clen_key)
+        if not content:
+            continue
+        naslov_match = re.search(r"^\s*\(([^)]+)\)", content)
+        naslov = f"{i}. člen ({naslov_match.group(1)})" if naslov_match else f"{i}. člen"
+        clen_label = f"{i}. člen"
+        zahteve.append(
+            {
                 "kategorija": "Splošni prostorski izvedbeni pogoji (PIP)",
                 "naslov": naslov,
                 "besedilo": content,
                 "clen": clen_label,
-            })
-            dodani_cleni.add(clen_key)
+            }
+        )
+        dodani_cleni.add(clen_key)
 
-    ciste_namenske_rabe = sorted(list({r.upper() for r in raba_list if r.upper() in CLEN_DATA_MAP}))
+    ciste_namenske_rabe = sorted(
+        [r for r in original_rabe_upper if r in clen_data_map]
+    )
     for raba in ciste_namenske_rabe:
         add_podrobni_pogoji(raba, "Podrobni prostorski izvedbeni pogoji (PIP NRP)")
 
     processed_eups = set()
-    priloga2_entries = PRILOGE.get("priloga2", {}).get("table_entries", [])
+    priloga2_entries = priloge.get("priloga2", {}).get("table_entries", [])
     for eup in eup_list:
         if not eup:
             continue
@@ -285,34 +320,69 @@ def build_requirements_from_db(eup_list: List[str], raba_list: List[str], projec
         pip = found_entry.get("posebni_pip", "")
         if pip and pip.strip() and pip.strip() != "—":
             eup_name = found_entry.get("enota_urejanja", "")
-            zahteve.append({
-                "kategorija": "Posebni prostorski izvedbeni pogoji (PIP EUP)",
-                "naslov": f"Posebni PIP za EUP: {eup_name}",
-                "besedilo": pip,
-                "clen": found_entry.get("clen", ""),
-            })
+            zahteve.append(
+                {
+                    "kategorija": "Posebni prostorski izvedbeni pogoji (PIP EUP)",
+                    "naslov": f"Posebni PIP za EUP: {eup_name}",
+                    "besedilo": pip,
+                    "clen": found_entry.get("clen", ""),
+                }
+            )
             processed_eups.add(normalized_eup)
 
     if ciste_namenske_rabe:
         rabe_za_prilogo1 = [
-            r for r in ciste_namenske_rabe
-            if build_priloga1_text(r) != f"Namenska raba '{r}' ni najdena v Prilogi 1."
+            r
+            for r in ciste_namenske_rabe
+            if build_priloga1_text(r, priloge)
+            != f"Namenska raba '{r}' ni najdena v Prilogi 1."
         ]
         if rabe_za_prilogo1:
-            priloga1_content = "\n\n" + "=" * 50 + "\n\n".join([
-                f"--- Določila za {raba} --- \n{build_priloga1_text(raba)}" for raba in rabe_za_prilogo1
-            ])
+            priloga1_sections = [
+                f"--- Določila za {raba} --- \n{build_priloga1_text(raba, priloge)}"
+                for raba in rabe_za_prilogo1
+            ]
+            priloga1_content = "\n\n" + "=" * 50 + "\n\n".join(priloga1_sections)
             naslov_rabe = ", ".join(rabe_za_prilogo1)
-            zahteve.append({
-                "kategorija": "Skladnost z Prilogo 1 (Enostavni/Nezahtevni objekti)",
-                "naslov": f"Preverjanje dopustnosti enostavnih in nezahtevnih objektov za namenske rabe: {naslov_rabe}",
-                "besedilo": priloga1_content,
-                "clen": "",
-            })
+            zahteve.append(
+                {
+                    "kategorija": "Skladnost z Prilogo 1 (Enostavni/Nezahtevni objekti)",
+                    "naslov": (
+                        "Preverjanje dopustnosti enostavnih in nezahtevnih objektov za "
+                        f"namenske rabe: {naslov_rabe}"
+                    ),
+                    "besedilo": priloga1_content,
+                    "clen": "",
+                }
+            )
 
     for i, zahteva in enumerate(zahteve):
         zahteva["id"] = f"Z_{i}"
     return zahteve
+
+
+def get_opn_katalog(municipality_slug: str | None = None) -> Dict[str, Any]:
+    return load_knowledge_base(municipality_slug)[0]
+
+
+def get_priloge(municipality_slug: str | None = None) -> Dict[str, Any]:
+    return load_knowledge_base(municipality_slug)[1]
+
+
+def get_all_eups(municipality_slug: str | None = None) -> List[str]:
+    return load_knowledge_base(municipality_slug)[2]
+
+
+def get_clen_data_map(municipality_slug: str | None = None) -> Dict[str, Any]:
+    return load_knowledge_base(municipality_slug)[3]
+
+
+def get_izrazi_text(municipality_slug: str | None = None) -> str:
+    return load_knowledge_base(municipality_slug)[4]
+
+
+def get_uredba_text(municipality_slug: str | None = None) -> str:
+    return load_knowledge_base(municipality_slug)[5]
 
 
 def search_knowledge_documents(
@@ -336,15 +406,18 @@ def search_knowledge_documents(
 
 __all__ = [
     "KEYWORD_TO_CLEN",
-    "ALL_EUPS",
-    "PRILOGE",
-    "OPN_KATALOG",
-    "CLEN_DATA_MAP",
-    "IZRAZI_TEXT",
-    "UREDBA_TEXT",
+    "KEYWORD_PATTERNS",
+    "load_knowledge_base",
+    "get_opn_katalog",
+    "get_priloge",
+    "get_all_eups",
+    "get_clen_data_map",
+    "get_izrazi_text",
+    "get_uredba_text",
     "format_structured_content",
     "build_requirements_from_db",
     "build_priloga1_text",
     "normalize_eup",
+    "extract_referenced_namenske_rabe",
     "search_knowledge_documents",
 ]

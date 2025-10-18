@@ -23,8 +23,11 @@ from .database import compute_session_summary, db_manager
 from .files import save_revision_files
 from .forms import generate_priloga_10a
 from .frontend import build_homepage
-from .knowledge_base import (IZRAZI_TEXT, UREDBA_TEXT,
-                           build_requirements_from_db)
+from .knowledge_base import (
+    build_requirements_from_db,
+    get_izrazi_text,
+    get_uredba_text,
+)
 from .parsers import convert_pdf_pages_to_images, parse_pdf
 from .prompts import build_prompt
 from .reporting import generate_word_report
@@ -128,13 +131,15 @@ async def extract_data(
         pdf_bytes = await upload.read()
         if not pdf_bytes: continue
         file_label = upload.filename or "Dokument.pdf"
-        text = parse_pdf(pdf_bytes)
+        text = await asyncio.to_thread(parse_pdf, pdf_bytes)
         if text: combined_text_parts.append(f"=== VIR: {file_label} ===\n{text}")
-        
+
         page_hint = page_overrides.get(file_label)
         if page_hint:
             try:
-                images = convert_pdf_pages_to_images(pdf_bytes, page_hint)
+                images = await asyncio.to_thread(
+                    convert_pdf_pages_to_images, pdf_bytes, page_hint
+                )
                 all_images.extend(images)
             except Exception as e:
                 logger.warning(f"[{session_id}] Napaka pri pretvorbi slik za {file_label}: {e}")
@@ -212,9 +217,11 @@ async def analyze_report(payload: AnalysisReportPayload):
         """
 
     zahteve_chunks = list(chunk_list(zahteve_za_analizo, ANALYSIS_CHUNK_SIZE))
+    izrazi_text = get_izrazi_text()
+    uredba_text = get_uredba_text()
     tasks = []
     for chunk in zahteve_chunks:
-        prompt = build_prompt(modified_project_text, chunk, IZRAZI_TEXT, UREDBA_TEXT)
+        prompt = build_prompt(modified_project_text, chunk, izrazi_text, uredba_text)
         task = call_gemini_async(prompt, images_for_analysis)
         tasks.append(task)
     
@@ -309,13 +316,16 @@ async def upload_revision(
             continue
         filename = upload.filename or "Popravek.pdf"
         stored_files_payload.append((filename, pdf_bytes, upload.content_type or "application/pdf"))
-        text = parse_pdf(pdf_bytes)
+        text = await asyncio.to_thread(parse_pdf, pdf_bytes)
         if text:
             revision_text_parts.append(f"=== REVIZIJA: {filename} ===\n{text}")
         page_hint = page_overrides.get(filename)
         if page_hint:
             try:
-                revision_images.extend(convert_pdf_pages_to_images(pdf_bytes, page_hint))
+                conversion_result = await asyncio.to_thread(
+                    convert_pdf_pages_to_images, pdf_bytes, page_hint
+                )
+                revision_images.extend(conversion_result)
             except Exception as exc:
                 logger.warning(f"[{session_id}] Napaka pri pretvorbi slik popravka {filename}: {exc}")
 
