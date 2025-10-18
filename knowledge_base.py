@@ -6,7 +6,6 @@ import re
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Pattern, Tuple
 
-from .config import DEFAULT_MUNICIPALITY_SLUG
 from .knowledge_store import knowledge_repository
 from .municipalities import get_municipality_profile
 
