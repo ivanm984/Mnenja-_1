@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List
 try:  # pragma: no cover - optional dependency import guard
     from openpyxl import load_workbook
     from openpyxl.utils.cell import coordinate_to_tuple
+    from openpyxl.styles import Alignment
 except ImportError as exc:  # pragma: no cover - import guard
     raise RuntimeError(
         "Knjižnica 'openpyxl' ni nameščena. Namestite jo z `pip install openpyxl`."
@@ -126,9 +127,51 @@ def _format_source_files(source_files: Iterable[Dict[str, Any]]) -> str:
     return "\n".join(files) if files else "Ni navedenih dokumentov."
 
 
+def _apply_wrap_text(cell) -> None:
+    try:
+        current = cell.alignment
+    except AttributeError:
+        current = None
+
+    if current:
+        params = {
+            "horizontal": current.horizontal,
+            "vertical": current.vertical,
+            "textRotation": current.text_rotation,
+            "wrapText": True,
+            "shrinkToFit": current.shrink_to_fit,
+            "indent": current.indent,
+            "relativeIndent": getattr(
+                current,
+                "relativeIndent",
+                getattr(current, "relative_indent", None),
+            ),
+            "justifyLastLine": getattr(
+                current,
+                "justifyLastLine",
+                getattr(current, "justify_last_line", None),
+            ),
+            "readingOrder": getattr(
+                current,
+                "readingOrder",
+                getattr(current, "reading_order", None),
+            ),
+        }
+
+        # Remove None values to avoid passing unsupported kwargs.
+        filtered_params = {k: v for k, v in params.items() if v is not None}
+        cell.alignment = Alignment(**filtered_params)
+        if cell.alignment.vertical is None:
+            cell.alignment = cell.alignment.copy(vertical="top")
+    else:
+        cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+
 def _set_cell_value(worksheet, cell: str, value: Any) -> None:
     try:
-        worksheet[cell] = value
+        target = worksheet[cell]
+        target.value = value
+        _apply_wrap_text(target)
         return
     except AttributeError as exc:
         if "MergedCell" not in str(exc):
@@ -140,9 +183,11 @@ def _set_cell_value(worksheet, cell: str, value: Any) -> None:
                 merged_range.min_row <= row <= merged_range.max_row
                 and merged_range.min_col <= column <= merged_range.max_col
             ):
-                worksheet.cell(
+                base_cell = worksheet.cell(
                     row=merged_range.min_row, column=merged_range.min_col
-                ).value = value
+                )
+                base_cell.value = value
+                _apply_wrap_text(base_cell)
                 return
 
         # If the cell is not part of a merged range re-raise the original error.
