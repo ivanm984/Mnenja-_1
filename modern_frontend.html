@@ -16,8 +16,15 @@
         
         /* Light/Dark Mode Variables */
         :root {
-            --primary: #6366f1; --primary-dark: #4f46e5; --primary-light: #a5b4fc;
-            --success: #10b981; --warning: #f59e0b; --danger: #ef4444; --info: #3b82f6;
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --primary-light: #a5b4fc;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --info: #3b82f6;
+            --pdf-panel-width: 50vw;
+            --pdf-panel-max-width: 900px;
         }
         
         body.dark-mode {
@@ -66,15 +73,26 @@
         @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
         @keyframes slideIn { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
         @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes progressShimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
         
         .hidden { display: none !important; }
         .app-container { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 2rem; transition: margin 0.35s ease, width 0.35s ease, max-width 0.35s ease; }
-        body.pdf-viewer-active { --pdf-panel-width: min(50vw, 900px); }
+        .progress-bar-container { position: fixed; top: 0; left: 0; right: 0; z-index: 4000; background: var(--bg-card); border-bottom: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); transform: translateY(-100%); transition: transform 0.3s ease; }
+        .progress-bar-container.active { transform: translateY(0); }
+        .progress-bar-content { padding: 1rem 2rem; display: flex; align-items: center; gap: 1rem; }
+        .progress-bar-info { flex: 1; min-width: 0; }
+        .progress-bar-title { font-weight: 600; color: var(--text); margin-bottom: 0.25rem; font-size: 0.95rem; }
+        .progress-bar-message { font-size: 0.85rem; color: var(--text-muted); }
+        .progress-bar-track { flex: 2; height: 8px; background: var(--input-bg); border-radius: 4px; overflow: hidden; position: relative; }
+        .progress-bar-fill { height: 100%; background: linear-gradient(90deg, var(--primary), var(--primary-light)); border-radius: 4px; transition: width 0.3s ease; position: relative; overflow: hidden; }
+        .progress-bar-fill::after { content: ''; position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent); animation: progressShimmer 1.5s infinite; }
+        .progress-bar-percentage { font-size: 0.9rem; font-weight: 600; color: var(--text); min-width: 45px; text-align: right; }
+        .progress-bar-spinner { width: 20px; height: 20px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; }
         body.pdf-viewer-active .app-container {
             margin: 0;
-            margin-left: var(--pdf-panel-width);
-            width: clamp(320px, calc(100vw - var(--pdf-panel-width) - 4rem), 1400px);
-            max-width: clamp(320px, calc(100vw - var(--pdf-panel-width) - 4rem), 1400px);
+            margin-left: min(var(--pdf-panel-width), var(--pdf-panel-max-width));
+            width: clamp(320px, calc(100vw - min(var(--pdf-panel-width), var(--pdf-panel-max-width)) - 4rem), 1400px);
+            max-width: clamp(320px, calc(100vw - min(var(--pdf-panel-width), var(--pdf-panel-max-width)) - 4rem), 1400px);
         }
         .header { backdrop-filter: blur(20px); background: var(--bg-glass); border: 1px solid var(--border); border-radius: 24px; padding: 2rem; margin-bottom: 2rem; box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1); animation: slideDown 0.6s ease-out; }
         .header-content { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1.5rem; }
@@ -231,8 +249,11 @@
         .filter-item-explanation { color: var(--text-muted); font-size: 0.9rem; line-height: 1.6; }
         
         /* PDF Viewer Modal */
-        .pdf-viewer-modal { position: fixed; top: 0; left: 0; width: min(50vw, 900px); height: 100%; background: var(--bg-card); z-index: 3000; display: flex; flex-direction: column; border-right: 1px solid var(--border); box-shadow: 12px 0 40px rgba(15, 23, 42, 0.35); transform: translateX(-100%); transition: transform 0.35s ease; }
+        .pdf-viewer-modal { position: fixed; top: 0; left: 0; width: min(var(--pdf-panel-width), var(--pdf-panel-max-width)); height: 100%; background: var(--bg-card); z-index: 3000; display: flex; flex-direction: column; border-right: 1px solid var(--border); box-shadow: 12px 0 40px rgba(15, 23, 42, 0.35); transform: translateX(-100%); transition: transform 0.35s ease; }
         .pdf-viewer-modal.open { transform: translateX(0); }
+        .pdf-viewer-modal.resizing { transition: none; }
+        .pdf-resize-handle { position: absolute; top: 0; right: -6px; width: 12px; height: 100%; cursor: ew-resize; z-index: 10; display: block; }
+        .pdf-resize-handle::after { content: ''; position: absolute; top: 50%; right: 4px; width: 2px; height: 60px; background: var(--border); border-radius: 2px; transform: translateY(-50%); }
         .pdf-viewer-header { background: var(--bg-card); padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); box-shadow: 0 6px 16px rgba(15, 23, 42, 0.18); }
         .pdf-viewer-title { font-size: 1.1rem; font-weight: 600; color: var(--text); max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .pdf-viewer-controls { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
@@ -244,6 +265,12 @@
         .pdf-canvas-container { background: white; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2); max-width: 100%; border-radius: 12px; overflow: hidden; }
         #pdfCanvas { display: block; max-width: 100%; height: auto; }
         .pdf-loading { color: white; font-size: 1.1rem; text-align: center; }
+
+        @media (max-width: 1024px) {
+            .pdf-viewer-modal { width: 100vw; max-width: 100vw; }
+            body.pdf-viewer-active .app-container { margin-left: 0; max-width: 1400px; display: none; }
+            .pdf-resize-handle { display: none; }
+        }
 
         @media (max-width: 768px) {
             .app-container { padding: 1rem; }
@@ -259,6 +286,20 @@
     </style>
 </head>
 <body class="dark-mode">
+    <div class="progress-bar-container" id="progress-bar">
+        <div class="progress-bar-content">
+            <div class="progress-bar-spinner"></div>
+            <div class="progress-bar-info">
+                <div class="progress-bar-title" id="progress-title">Procesiranje...</div>
+                <div class="progress-bar-message" id="progress-message">Pripravljam dokumente</div>
+            </div>
+            <div class="progress-bar-track">
+                <div class="progress-bar-fill" id="progress-fill" style="width: 0%;"></div>
+            </div>
+            <div class="progress-bar-percentage" id="progress-percentage">0%</div>
+        </div>
+    </div>
+
     <div class="app-container">
         <div class="header">
             <div class="header-content">
@@ -419,6 +460,7 @@
         
         <!-- PDF Viewer Modal -->
         <div id="pdf-viewer-modal" class="pdf-viewer-modal hidden">
+            <div class="pdf-resize-handle" id="pdf-resize-handle"></div>
             <div class="pdf-viewer-header">
                 <div class="pdf-viewer-title" id="pdf-viewer-title">PDF Predogled</div>
                 <div class="pdf-viewer-controls">
@@ -492,6 +534,9 @@
             pdfCloseTimeout: null,
             currentPdfFile: null,
             pdfPopoutButton: null,
+            pdfScrollTimeout: null,
+            pdfWidth: 50,
+            isResizing: false,
 
             init() {
                 const savedTheme = localStorage.getItem('theme') || 'dark';
@@ -501,6 +546,12 @@
                 this.pdfPopoutButton = document.getElementById('pdf-popout');
                 this.setPdfPopoutEnabled(false);
 
+                const savedPdfWidth = parseFloat(localStorage.getItem('pdfWidth') || '');
+                if (!Number.isNaN(savedPdfWidth) && savedPdfWidth >= 20 && savedPdfWidth <= 80) {
+                    this.pdfWidth = savedPdfWidth;
+                }
+                document.documentElement.style.setProperty('--pdf-panel-width', `${this.pdfWidth}vw`);
+
                 const uploadZone = document.getElementById('upload-zone');
                 uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('dragging'); });
                 uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragging'));
@@ -509,6 +560,13 @@
                     uploadZone.classList.remove('dragging');
                     this.addFiles(Array.from(e.dataTransfer.files));
                 });
+
+                const pdfBody = document.getElementById('pdf-viewer-body');
+                if (pdfBody) {
+                    pdfBody.addEventListener('wheel', (event) => this.handlePdfScroll(event), { passive: false });
+                }
+
+                this.initPdfResize();
             },
 
             getPdfPopoutButton() {
@@ -523,6 +581,65 @@
                 if (button) {
                     button.disabled = !isEnabled;
                 }
+            },
+
+            initPdfResize() {
+                const resizeHandle = document.getElementById('pdf-resize-handle');
+                const pdfModal = document.getElementById('pdf-viewer-modal');
+                if (!resizeHandle || !pdfModal) return;
+
+                resizeHandle.addEventListener('mousedown', (event) => {
+                    if (window.innerWidth <= 1024) return;
+                    event.preventDefault();
+                    this.isResizing = true;
+                    pdfModal.classList.add('resizing');
+                    document.body.style.cursor = 'ew-resize';
+                    document.body.style.userSelect = 'none';
+                });
+
+                document.addEventListener('mousemove', (event) => {
+                    if (!this.isResizing) return;
+                    const newWidth = (event.clientX / window.innerWidth) * 100;
+                    if (newWidth >= 20 && newWidth <= 80) {
+                        this.pdfWidth = newWidth;
+                        document.documentElement.style.setProperty('--pdf-panel-width', `${newWidth}vw`);
+                    }
+                });
+
+                document.addEventListener('mouseup', () => {
+                    if (!this.isResizing) return;
+                    this.isResizing = false;
+                    pdfModal.classList.remove('resizing');
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                    localStorage.setItem('pdfWidth', String(this.pdfWidth));
+                });
+            },
+
+            handlePdfScroll(event) {
+                if (!this.pdfDoc || this.pdfLoading) return;
+                event.preventDefault();
+                if (this.pdfScrollTimeout) clearTimeout(this.pdfScrollTimeout);
+                const direction = event.deltaY;
+                this.pdfScrollTimeout = setTimeout(() => {
+                    if (direction > 0 && this.pdfCurrentPage < this.pdfTotalPages) {
+                        this.renderPdfPage(this.pdfCurrentPage + 1);
+                    } else if (direction < 0 && this.pdfCurrentPage > 1) {
+                        this.renderPdfPage(this.pdfCurrentPage - 1);
+                    }
+                }, 150);
+            },
+
+            updatePdfButtons() {
+                const zoomOut = document.getElementById('pdf-zoom-out');
+                const zoomIn = document.getElementById('pdf-zoom-in');
+                const prev = document.getElementById('pdf-prev-page');
+                const next = document.getElementById('pdf-next-page');
+                const hasDocument = !!this.pdfDoc;
+                if (zoomOut) zoomOut.disabled = !hasDocument || this.pdfZoom <= 0.5 || this.pdfLoading;
+                if (zoomIn) zoomIn.disabled = !hasDocument || this.pdfZoom >= 3 || this.pdfLoading;
+                if (prev) prev.disabled = !hasDocument || this.pdfCurrentPage <= 1 || this.pdfLoading;
+                if (next) next.disabled = !hasDocument || this.pdfCurrentPage >= this.pdfTotalPages || this.pdfLoading;
             },
 
             toggleTheme() {
@@ -652,14 +769,20 @@
                 this.pdfCurrentPage = 1;
                 this.pdfZoom = 1.5;
                 this.pdfLoading = true;
-                
+                this.updatePdfButtons();
+
                 const viewerModal = document.getElementById('pdf-viewer-modal');
+                this.setPdfPopoutEnabled(false);
                 if (this.pdfCloseTimeout) {
                     clearTimeout(this.pdfCloseTimeout);
                     this.pdfCloseTimeout = null;
                 }
-                viewerModal.classList.remove('hidden');
-                requestAnimationFrame(() => viewerModal.classList.add('open'));
+                document.documentElement.style.setProperty('--pdf-panel-width', `${this.pdfWidth}vw`);
+                if (viewerModal) {
+                    viewerModal.classList.remove('hidden');
+                    requestAnimationFrame(() => viewerModal.classList.add('open'));
+                }
+                document.body.classList.add('pdf-viewer-active');
                 document.getElementById('pdf-viewer-title').textContent = file.name;
                 document.getElementById('pdf-loading').style.display = 'block';
                 document.getElementById('pdf-canvas-container').style.display = 'none';
@@ -670,19 +793,13 @@
                     this.pdfDoc = pdf;
                     this.pdfTotalPages = pdf.numPages;
                     
-                    if (this.pdfTotalPages > 1) {
-                        document.getElementById('pdf-page-nav').style.display = 'flex';
-                    } else {
-                        document.getElementById('pdf-page-nav').style.display = 'none';
-                    }
+                    document.getElementById('pdf-page-nav').style.display = this.pdfTotalPages > 1 ? 'flex' : 'none';
 
                     await this.renderPdfPage(1);
                     this.pdfLoading = false;
                     document.getElementById('pdf-loading').style.display = 'none';
                     document.getElementById('pdf-canvas-container').style.display = 'block';
-                    if (popoutButton) {
-                        popoutButton.disabled = false;
-                    }
+                    this.setPdfPopoutEnabled(true);
                 } catch (error) {
                     console.error('Napaka pri nalaganju PDF:', error);
                     this.showToast('error', 'Napaka', 'Ni mogoče naložiti PDF dokumenta');
@@ -692,13 +809,10 @@
 
             async renderPdfPage(pageNum) {
                 if (!this.pdfDoc || pageNum < 1 || pageNum > this.pdfTotalPages) return;
-                
+
                 this.pdfLoading = true;
-                document.getElementById('pdf-zoom-out').disabled = true;
-                document.getElementById('pdf-zoom-in').disabled = true;
-                document.getElementById('pdf-prev-page').disabled = true;
-                document.getElementById('pdf-next-page').disabled = true;
-                
+                this.updatePdfButtons();
+
                 try {
                     const page = await this.pdfDoc.getPage(pageNum);
                     const canvas = document.getElementById('pdfCanvas');
@@ -716,31 +830,47 @@
                     this.pdfCurrentPage = pageNum;
                     document.getElementById('pdf-page-info').textContent = `Stran ${this.pdfCurrentPage} / ${this.pdfTotalPages}`;
                     document.getElementById('pdf-zoom-value').textContent = `${Math.round(this.pdfZoom * 100)}%`;
-                    
+
                     this.pdfLoading = false;
-                    document.getElementById('pdf-zoom-out').disabled = this.pdfZoom <= 0.5;
-                    document.getElementById('pdf-zoom-in').disabled = this.pdfZoom >= 3;
-                    document.getElementById('pdf-prev-page').disabled = this.pdfCurrentPage <= 1;
-                    document.getElementById('pdf-next-page').disabled = this.pdfCurrentPage >= this.pdfTotalPages;
+                    this.updatePdfButtons();
                 } catch (error) {
                     console.error('Napaka pri prikazu strani:', error);
                     this.showToast('error', 'Napaka', 'Ni mogoče prikazati strani');
                     this.pdfLoading = false;
+                    this.updatePdfButtons();
                 }
             },
 
             closePdfViewer() {
                 const viewerModal = document.getElementById('pdf-viewer-modal');
-                viewerModal.classList.remove('open');
-                this.pdfCloseTimeout = setTimeout(() => {
-                    viewerModal.classList.add('hidden');
-                    this.pdfCloseTimeout = null;
-                }, 350);
+                if (viewerModal) {
+                    viewerModal.classList.remove('open');
+                    viewerModal.classList.remove('resizing');
+                    this.pdfCloseTimeout = setTimeout(() => {
+                        viewerModal.classList.add('hidden');
+                        this.pdfCloseTimeout = null;
+                    }, 350);
+                }
+                document.body.classList.remove('pdf-viewer-active');
+                this.setPdfPopoutEnabled(false);
+                this.isResizing = false;
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                if (this.pdfScrollTimeout) {
+                    clearTimeout(this.pdfScrollTimeout);
+                    this.pdfScrollTimeout = null;
+                }
+                const pageNav = document.getElementById('pdf-page-nav');
+                if (pageNav) {
+                    pageNav.style.display = 'none';
+                }
                 this.pdfDoc = null;
                 this.pdfCurrentPage = 1;
                 this.pdfTotalPages = 0;
                 this.pdfZoom = 1.5;
                 this.currentPdfFile = null;
+                this.pdfLoading = false;
+                this.updatePdfButtons();
             },
 
             popOutPdfViewer() {
@@ -750,33 +880,21 @@
                 }
 
                 const fileUrl = URL.createObjectURL(this.currentPdfFile);
-                const popout = window.open('', '_blank', 'noopener,noreferrer');
+                const popout = window.open(
+                    fileUrl,
+                    '_blank',
+                    'width=1200,height=900,menubar=yes,toolbar=yes,location=yes,status=yes,resizable=yes,scrollbars=yes'
+                );
 
-                if (!popout) {
-                    URL.revokeObjectURL(fileUrl);
-                    this.showToast('error', 'Blokirano', 'Brskalnik je blokiral odpiranje novega okna');
+                if (!popout || popout.closed || typeof popout.closed === 'undefined') {
+                    this.showPopupBlockedModal(fileUrl);
+                    setTimeout(() => URL.revokeObjectURL(fileUrl), 60000);
                     return;
                 }
 
-                popout.opener = null;
-
-                const safeTitle = this.currentPdfFile.name
-                    .replace(/&/g, '&amp;')
-                    .replace(/</g, '&lt;')
-                    .replace(/>/g, '&gt;')
-                    .replace(/"/g, '&quot;')
-                    .replace(/'/g, '&#39;');
-
-                popout.document.write(`<!DOCTYPE html><html lang="sl"><head><meta charset="UTF-8"><title>${safeTitle}</title><style>html,body{margin:0;height:100%;background:#111827;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}iframe{border:0;width:100%;height:100%;}</style></head><body><iframe src="${fileUrl}" title="${safeTitle}" style="width:100%;height:100%;border:0;"></iframe></body></html>`);
-                popout.document.close();
-                popout.addEventListener('beforeunload', () => URL.revokeObjectURL(fileUrl));
-                try {
-                    popout.focus();
-                } catch (error) {
-                    console.warn('Ni mogoče fokusirati novega okna:', error);
-                }
                 this.closePdfViewer();
-                this.showToast('info', 'Predogled', 'PDF je odprt v novem oknu');
+                this.showToast('success', 'Odprto', 'PDF je odprt v novem oknu');
+                setTimeout(() => URL.revokeObjectURL(fileUrl), 60000);
             },
 
             pdfPrevPage() {
@@ -807,37 +925,46 @@
 
             async extractData() {
                 if (this.files.length === 0) return;
-                this.showLoading('Ekstrahiram podatke iz dokumentov...');
-                
+                this.showProgress('Ekstrahiram podatke', 'Pripravljam dokumente...', 10);
+                document.getElementById('extract-btn').disabled = true;
+
                 try {
                     const formData = new FormData();
                     this.files.forEach(file => formData.append('pdf_files', file));
                     formData.append('municipality_slug', 'litija');
                     formData.append('files_meta_json', JSON.stringify(Object.values(this.filesMeta)));
-                    
+                    this.updateProgress('Ekstrahiram podatke', 'Pošiljam dokumente na strežnik...', 35);
                     const response = await fetch('/extract-data', { method: 'POST', body: formData });
+                    this.updateProgress('Ekstrahiram podatke', 'Analiziram vsebino...', 65);
                     if (!response.ok) throw new Error('API napaka');
                     const data = await response.json();
-                    
+                    this.updateProgress('Ekstrahiram podatke', 'Pripravljam rezultate...', 85);
+
                     this.sessionId = data.session_id;
                     this.eupRabaPairs = (data.eup || []).map((eup, i) => ({ eup, raba: (data.namenska_raba || [])[i] || '' }));
                     if (this.eupRabaPairs.length === 0) this.eupRabaPairs = [{ eup: '', raba: '' }];
-                    
+
                     this.keyData = {};
                     Object.keys(KEY_DATA_LABELS).forEach(key => {
                         this.keyData[key] = data[key] || 'Ni podatka v dokumentaciji';
                     });
-                    
+
                     this.renderEupRabaPairs();
                     this.renderKeyData();
-                    
-                    this.hideLoading();
-                    this.showToast('success', 'Podatki ekstrahirani', 'AI je uspešno ekstrahiral ključne podatke');
+                    this.updateProgress('Ekstrahiram podatke', 'Dokončano!', 100);
+                    setTimeout(() => {
+                        this.hideProgress();
+                        this.showToast('success', 'Podatki ekstrahirani', 'AI je uspešno ekstrahiral ključne podatke');
+                    }, 500);
                     this.updateStepAccess();
                     this.nextStep();
+                    document.getElementById('extract-btn').disabled = false;
                 } catch (error) {
-                    this.hideLoading();
+                    this.hideProgress();
                     this.showToast('error', 'Napaka', error.message);
+                    if (this.files.length > 0) {
+                        document.getElementById('extract-btn').disabled = false;
+                    }
                 }
             },
 
@@ -1384,13 +1511,74 @@
             formatDate(dateString) {
                 if (!dateString) return 'Neznano';
                 const date = new Date(dateString);
-                return date.toLocaleDateString('sl-SI', { 
-                    day: 'numeric', 
-                    month: 'long', 
+                return date.toLocaleDateString('sl-SI', {
+                    day: 'numeric',
+                    month: 'long',
                     year: 'numeric',
                     hour: '2-digit',
                     minute: '2-digit'
                 });
+            },
+
+            showProgress(title, message, percentage) {
+                const progressBar = document.getElementById('progress-bar');
+                if (!progressBar) return;
+                const safePercentage = Math.max(0, Math.min(percentage, 100));
+                document.getElementById('progress-title').textContent = title;
+                document.getElementById('progress-message').textContent = message;
+                document.getElementById('progress-fill').style.width = `${safePercentage}%`;
+                document.getElementById('progress-percentage').textContent = `${safePercentage}%`;
+                progressBar.classList.add('active');
+            },
+
+            updateProgress(title, message, percentage) {
+                const progressBar = document.getElementById('progress-bar');
+                if (!progressBar || !progressBar.classList.contains('active')) {
+                    this.showProgress(title, message, percentage);
+                    return;
+                }
+                const safePercentage = Math.max(0, Math.min(percentage, 100));
+                document.getElementById('progress-title').textContent = title;
+                document.getElementById('progress-message').textContent = message;
+                document.getElementById('progress-fill').style.width = `${safePercentage}%`;
+                document.getElementById('progress-percentage').textContent = `${safePercentage}%`;
+            },
+
+            hideProgress() {
+                const progressBar = document.getElementById('progress-bar');
+                if (!progressBar) return;
+                progressBar.classList.remove('active');
+            },
+
+            showPopupBlockedModal(fileUrl) {
+                const modalHtml = `
+                    <div class="modal-overlay show" id="popup-blocked-modal" style="z-index: 10000; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; opacity: 1; pointer-events: all;">
+                        <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 24px; padding: 2rem; max-width: 500px; width: 90%; box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.3);">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                                <h2 style="font-size: 1.5rem; font-weight: 700; color: var(--text);">🚫 Blokirano pojavno okno</h2>
+                                <button onclick="app.closePopupBlockedModal()" style="background: transparent; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-muted);">✕</button>
+                            </div>
+                            <div style="padding: 1rem 0;">
+                                <p style="margin-bottom: 1rem; color: var(--text);">Vaš brskalnik je blokiral odpiranje PDF-ja v novem oknu.</p>
+                                <p style="margin-bottom: 1.5rem; color: var(--text-muted); font-size: 0.9rem;">Kliknite na spodnji gumb za odpiranje:</p>
+                                <a href="${fileUrl}" target="_blank" class="btn btn-primary" style="display: block; text-align: center; text-decoration: none; margin-bottom: 1rem;" onclick="app.closePopupBlockedModal()">📄 Odpri PDF v novem oknu</a>
+                                <div style="background: var(--bg-glass); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; margin-top: 1rem;">
+                                    <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem;"><strong>💡 Nasvet:</strong></p>
+                                    <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0;">Če želite omogočiti samodejno odpiranje, dovolite pojavna okna za to stran v nastavitvah brskalnika.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
+                const temp = document.createElement('div');
+                temp.innerHTML = modalHtml.trim();
+                document.body.appendChild(temp.firstChild);
+            },
+
+            closePopupBlockedModal() {
+                const modal = document.getElementById('popup-blocked-modal');
+                if (modal) {
+                    modal.remove();
+                }
             },
 
             showLoading(message) {
