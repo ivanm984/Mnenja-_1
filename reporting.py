@@ -1,13 +1,12 @@
 """Utilities for creating the Word compliance report."""
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
 from docx import Document
 from docx.enum.section import WD_ORIENT
-from docx.shared import Inches
+from docx.shared import Inches, RGBColor
 
 
 def generate_word_report(
@@ -28,11 +27,20 @@ def generate_word_report(
     section.left_margin = margin
     section.right_margin = margin
 
-    doc.add_paragraph(f"Datum analize: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
-    doc.add_heading("Poročilo o skladnosti z občinskimi prostorskimi akti", level=1)
+    def resolve_zahteva_label(zahteva: Dict[str, Any]) -> str:
+        clen = (zahteva.get("clen") or "").strip()
+        naslov = (zahteva.get("naslov") or "").strip()
+        if clen and naslov:
+            lowered_clen = clen.lower()
+            if naslov.lower().startswith(lowered_clen):
+                return naslov
+            return f"{clen} - {naslov}"
+        return naslov or clen or "Neznan pogoj"
+
+    noncompliant_color = RGBColor(0xFF, 0x00, 0x00)
 
     neskladja = [
-        zahteva.get("naslov", "Neznan pogoj")
+        resolve_zahteva_label(zahteva)
         for zahteva in zahteve
         if results_map.get(zahteva["id"], {}).get("skladnost") == "Neskladno"
     ]
@@ -53,7 +61,9 @@ def generate_word_report(
     if neskladja:
         p = doc.add_paragraph("Ugotovljena so bila neskladja v naslednjih točkah oziroma členih:")
         for tocka in neskladja:
-            doc.add_paragraph(tocka, style="List Bullet")
+            bullet = doc.add_paragraph(tocka, style="List Bullet")
+            for run in bullet.runs:
+                run.font.color.rgb = noncompliant_color
     doc.add_paragraph()
 
     kategorije = {}
@@ -87,7 +97,8 @@ def generate_word_report(
             result = results_map.get(zahteva["id"], {})
 
             pogoj_p = row_cells[0].paragraphs[0]
-            pogoj_p.add_run(zahteva.get("naslov", "Brez naslova")).bold = True
+            naslov_run = pogoj_p.add_run(resolve_zahteva_label(zahteva))
+            naslov_run.bold = True
             pogoj_p.add_run(f"\n\n{zahteva.get('besedilo', 'Brez besedila')}")
 
             obrazlozitev_p = row_cells[1].paragraphs[0]
@@ -98,11 +109,17 @@ def generate_word_report(
 
             skladnost_p = row_cells[2].paragraphs[0]
             skladnost_p.add_run("Skladnost:\n").bold = True
-            skladnost_p.add_run(result.get("skladnost", "Neznano"))
+            skladnost_run = skladnost_p.add_run(result.get("skladnost", "Neznano"))
             ukrep_text = result.get("predlagani_ukrep", "—")
             if ukrep_text and ukrep_text != "—":
                 skladnost_p.add_run("\n\nPredlagani ukrepi:\n").bold = True
                 skladnost_p.add_run(ukrep_text)
+
+            if result.get("skladnost") == "Neskladno":
+                for paragraph in (pogoj_p, obrazlozitev_p):
+                    for run in paragraph.runs:
+                        run.font.color.rgb = noncompliant_color
+                skladnost_run.font.color.rgb = noncompliant_color
 
     doc.save(output_path)
     return str(Path(output_path).resolve())
