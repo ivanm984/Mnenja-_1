@@ -1094,6 +1094,10 @@
                                 <span class="meta-label">PROJEKTANT</span>
                                 <span class="meta-value">{{ metadata.projektant || 'Ni podatka' }}</span>
                             </div>
+                            <div class="meta-field" style="grid-column: 1 / -1;">
+                                <span class="meta-label">KRATEK OPIS GRADNJE</span>
+                                <span class="meta-value">{{ metadata.kratek_opis || 'Ni podatka' }}</span>
+                            </div>
                         </div>
 
                         <div class="grid-two">
@@ -1335,7 +1339,7 @@
                     eupPairs: [],
                     initialKeyData: {},
                     keyData: {},
-                    metadata: { investitor: '', ime_projekta: '', stevilka_projekta: '', datum_projekta: '', projektant: '' },
+                    metadata: { investitor: '', ime_projekta: '', stevilka_projekta: '', datum_projekta: '', projektant: '', kratek_opis: '' },
                     requirements: [],
                     resultsMap: {},
                     editableFindings: {},
@@ -1587,12 +1591,13 @@
                         const val = data[key] || 'Ni podatka v dokumentaciji';
                         this.initialKeyData[key] = val; this.keyData[key] = val;
                     });
-                    this.metadata = { 
+                    this.metadata = {
                         investitor: data.investitor,
                         ime_projekta: data.ime_projekta,
                         stevilka_projekta: data.stevilka_projekta,
                         datum_projekta: data.datum_projekta,
-                        projektant: data.projektant
+                        projektant: data.projektant,
+                        kratek_opis: data.kratek_opis
                     };
                 },
                 async runAnalysis(extra = {}) {

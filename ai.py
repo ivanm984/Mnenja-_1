@@ -47,18 +47,45 @@ async def call_gemini_for_details_async(project_text: str, images: List[Image.Im
 async def call_gemini_for_metadata_async(project_text: str) -> Dict[str, str]:
     """Pridobi metapodatke projekta s hitrim modelom."""
     prompt = f"""
-    Analiziraj besedilo in izlušči: investitor, ime_projekta, stevilka_projekta, datum_projekta, projektant.
-    Odgovori SAMO v JSON formatu. Če podatka ni, uporabi "Ni podatka".
+    Analiziraj besedilo in izlušči naslednje podatke: investitor, ime_projekta, stevilka_projekta,
+    datum_projekta, projektant in kratek_opis.
+
+    Polje "kratek_opis" mora biti 2–3 stavki dolg povzetek gradnje, ki vključuje NAJMANJ naslednje
+    informacije (če so razvidne): naziv objekta, tlorisne dimenzije, etažnost, višino slemena,
+    naklon strehe, smer slemena in vrsto kritine. Če posamezen podatek ni razviden, jasno zapiši,
+    da ga dokumentacija ne navaja.
+
+    Primer kratkega opisa (samo kot slogovna usmeritev – podatke vedno vzemi iz gradiva):
+    "Predmet gradnje je stanovanjska hiša, tlorisnih dimenzij 10×8 m. Etažnost objekta je pritličje +
+    mansarda (P+M), streha je simetrična dvokapnica v smeri daljše stranice objekta (V–Z) z naklonom
+    40°. Višina slemena znaša 10 m, kritina pa je načrtovana kot opečna."
+
+    Odgovori SAMO v JSON formatu z zgoraj naštetimi ključi. Če podatka ni, uporabi "Ni podatka".
     Besedilo dokumentacije: --- {project_text[:20000]} ---
     """
     try:
         # SPREMEMBA: Uporablja se hiter model za ekstrakcijo
         model = genai.GenerativeModel(FAST_MODEL_NAME, generation_config={"response_mime_type": "application/json"})
         response = await model.generate_content_async(prompt)
-        return json.loads(response.text)
+        data = json.loads(response.text)
+        return {
+            "investitor": data.get("investitor", "Ni podatka"),
+            "ime_projekta": data.get("ime_projekta", "Ni podatka"),
+            "stevilka_projekta": data.get("stevilka_projekta", "Ni podatka"),
+            "datum_projekta": data.get("datum_projekta", "Ni podatka"),
+            "projektant": data.get("projektant", "Ni podatka"),
+            "kratek_opis": data.get("kratek_opis", "Ni podatka"),
+        }
     except Exception as exc:
         print(f"⚠️ Napaka pri AI Arhivistu (flash): {exc}.")
-        return {"ime_projekta": "Ni podatka", "stevilka_projekta": "Ni podatka", "datum_projekta": "Ni podatka", "projektant": "Ni podatka"}
+        return {
+            "investitor": "Ni podatka",
+            "ime_projekta": "Ni podatka",
+            "stevilka_projekta": "Ni podatka",
+            "datum_projekta": "Ni podatka",
+            "projektant": "Ni podatka",
+            "kratek_opis": "Ni podatka",
+        }
 
 
 async def call_gemini_for_key_data_async(project_text: str, images: List[Image.Image]) -> Dict[str, Any]:
