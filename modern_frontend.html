@@ -68,7 +68,14 @@
         @keyframes spin { to { transform: rotate(360deg); } }
         
         .hidden { display: none !important; }
-        .app-container { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 2rem; }
+        .app-container { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 2rem; transition: margin 0.35s ease, width 0.35s ease, max-width 0.35s ease; }
+        body.pdf-viewer-active { --pdf-panel-width: min(50vw, 900px); }
+        body.pdf-viewer-active .app-container {
+            margin: 0;
+            margin-left: var(--pdf-panel-width);
+            width: clamp(320px, calc(100vw - var(--pdf-panel-width) - 4rem), 1400px);
+            max-width: clamp(320px, calc(100vw - var(--pdf-panel-width) - 4rem), 1400px);
+        }
         .header { backdrop-filter: blur(20px); background: var(--bg-glass); border: 1px solid var(--border); border-radius: 24px; padding: 2rem; margin-bottom: 2rem; box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1); animation: slideDown 0.6s ease-out; }
         .header-content { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1.5rem; }
         .logo-section h1 { font-size: 2rem; font-weight: 800; background: linear-gradient(135deg, var(--primary-light) 0%, var(--primary) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 0.5rem; }
@@ -425,6 +432,7 @@
                         <span class="pdf-page-info" id="pdf-page-info">Stran 1 / 1</span>
                         <button class="btn btn-secondary btn-small" onclick="app.pdfNextPage()" id="pdf-next-page">Naslednja →</button>
                     </div>
+                    <button class="btn btn-secondary btn-small" onclick="app.popOutPdfViewer()" id="pdf-popout" disabled>🗖 Odpri v novem oknu</button>
                     <button class="btn btn-primary btn-small" onclick="app.closePdfViewer()">Zapri</button>
                 </div>
             </div>
@@ -621,7 +629,7 @@
             async openPdfViewer(fileIndex) {
                 const file = this.files[fileIndex];
                 if (!file || file.type !== 'application/pdf') return;
-                
+
                 this.currentPdfFile = file;
                 this.pdfCurrentPage = 1;
                 this.pdfZoom = 1.5;
@@ -637,7 +645,7 @@
                 document.getElementById('pdf-viewer-title').textContent = file.name;
                 document.getElementById('pdf-loading').style.display = 'block';
                 document.getElementById('pdf-canvas-container').style.display = 'none';
-                
+
                 try {
                     const arrayBuffer = await file.arrayBuffer();
                     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -649,11 +657,14 @@
                     } else {
                         document.getElementById('pdf-page-nav').style.display = 'none';
                     }
-                    
+
                     await this.renderPdfPage(1);
                     this.pdfLoading = false;
                     document.getElementById('pdf-loading').style.display = 'none';
                     document.getElementById('pdf-canvas-container').style.display = 'block';
+                    if (popoutButton) {
+                        popoutButton.disabled = false;
+                    }
                 } catch (error) {
                     console.error('Napaka pri nalaganju PDF:', error);
                     this.showToast('error', 'Napaka', 'Ni mogoče naložiti PDF dokumenta');
@@ -712,6 +723,42 @@
                 this.pdfTotalPages = 0;
                 this.pdfZoom = 1.5;
                 this.currentPdfFile = null;
+            },
+
+            popOutPdfViewer() {
+                if (!this.currentPdfFile) {
+                    this.showToast('info', 'Ni dokumenta', 'Najprej odprite PDF predogled');
+                    return;
+                }
+
+                const fileUrl = URL.createObjectURL(this.currentPdfFile);
+                const popout = window.open('', '_blank', 'noopener,noreferrer');
+
+                if (!popout) {
+                    URL.revokeObjectURL(fileUrl);
+                    this.showToast('error', 'Blokirano', 'Brskalnik je blokiral odpiranje novega okna');
+                    return;
+                }
+
+                popout.opener = null;
+
+                const safeTitle = this.currentPdfFile.name
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+
+                popout.document.write(`<!DOCTYPE html><html lang="sl"><head><meta charset="UTF-8"><title>${safeTitle}</title><style>html,body{margin:0;height:100%;background:#111827;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}iframe{border:0;width:100%;height:100%;}</style></head><body><iframe src="${fileUrl}" title="${safeTitle}" style="width:100%;height:100%;border:0;"></iframe></body></html>`);
+                popout.document.close();
+                popout.addEventListener('beforeunload', () => URL.revokeObjectURL(fileUrl));
+                try {
+                    popout.focus();
+                } catch (error) {
+                    console.warn('Ni mogoče fokusirati novega okna:', error);
+                }
+                this.closePdfViewer();
+                this.showToast('info', 'Predogled', 'PDF je odprt v novem oknu');
             },
 
             pdfPrevPage() {
