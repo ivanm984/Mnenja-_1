@@ -178,26 +178,81 @@ def _resolve_top_left_if_merged(ws: Worksheet, row: int, column: int):
     return ws.cell(row=row, column=column)
 
 
+def _alignment_value(alignment: Alignment, names) -> Any:
+    for name in names:
+        if hasattr(alignment, name):
+            return getattr(alignment, name)
+    return None
+
+
+def _collect_alignment_kwargs(alignment: Alignment, *, camel_case: bool) -> Dict[str, Any]:
+    keys = [
+        ("horizontal", ("horizontal",)),
+        ("vertical", ("vertical",)),
+        ("textRotation" if camel_case else "text_rotation", ("text_rotation", "textRotation")),
+        ("shrinkToFit" if camel_case else "shrink_to_fit", ("shrink_to_fit", "shrinkToFit")),
+        ("indent", ("indent",)),
+        (
+            "relativeIndent" if camel_case else "relative_indent",
+            ("relative_indent", "relativeIndent"),
+        ),
+        (
+            "justifyLastLine" if camel_case else "justify_last_line",
+            ("justify_last_line", "justifyLastLine"),
+        ),
+        (
+            "readingOrder" if camel_case else "reading_order",
+            ("reading_order", "readingOrder"),
+        ),
+    ]
+
+    kwargs: Dict[str, Any] = {}
+    for key, names in keys:
+        value = _alignment_value(alignment, names)
+        if value is not None:
+            kwargs[key] = value
+
+    wrap_key = "wrapText" if camel_case else "wrap_text"
+    kwargs[wrap_key] = True
+
+    vertical_key = "vertical"
+    if kwargs.get(vertical_key) is None:
+        kwargs[vertical_key] = "top"
+
+    return kwargs
+
+
+def _build_wrapped_alignment(alignment: Optional[Alignment]) -> Alignment:
+    if alignment is None:
+        for wrap_key in ("wrapText", "wrap_text"):
+            try:
+                return Alignment(**{wrap_key: True, "vertical": "top"})
+            except TypeError:
+                continue
+        return Alignment(wrap_text=True, vertical="top")
+
+    for camel_case in (True, False):
+        kwargs = _collect_alignment_kwargs(alignment, camel_case=camel_case)
+        try:
+            return Alignment(**kwargs)
+        except TypeError:
+            continue
+
+    for wrap_key in ("wrapText", "wrap_text"):
+        try:
+            return Alignment(**{wrap_key: True, "vertical": "top"})
+        except TypeError:
+            continue
+
+    return Alignment(wrap_text=True, vertical="top")
+
+
 def _write_value_cell_right_of_label(ws: Worksheet, label_cell, value: Any):
     """Write *value* into the value column (column B) for *label_cell*."""
 
     target = _resolve_top_left_if_merged(ws, label_cell.row, 2)
     target.value = value
-    current = target.alignment
-    if current:
-        target.alignment = Alignment(
-            horizontal=current.horizontal,
-            vertical=current.vertical,
-            text_rotation=current.text_rotation,
-            wrap_text=True,
-            shrink_to_fit=current.shrink_to_fit,
-            indent=current.indent,
-            relative_indent=getattr(current, "relative_indent", 0),
-            justify_last_line=getattr(current, "justify_last_line", False),
-            reading_order=getattr(current, "reading_order", 0),
-        )
-    else:
-        target.alignment = Alignment(wrap_text=True, vertical="top")
+    target.alignment = _build_wrapped_alignment(target.alignment)
 
 
 def _as_multiline(value: Any) -> str:
