@@ -9,11 +9,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR = PROJECT_ROOT / "data"
 DATA_DIR.mkdir(exist_ok=True)
-
-FRONTEND_DIST_DIR = PROJECT_ROOT / "frontend" / "dist"
 
 API_KEY = os.environ.get("GEMINI_API_KEY")
 if not API_KEY:
@@ -62,5 +60,4 @@ __all__ = [
     "DEFAULT_SQLITE_PATH",
     "DATA_DIR",
     "TEMP_STORAGE_PATH",
-    "FRONTEND_DIST_DIR",
 ]
