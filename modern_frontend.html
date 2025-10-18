@@ -255,12 +255,6 @@
             .pdf-viewer-controls { flex-direction: column; align-items: stretch; gap: 0.5rem; }
             .pdf-viewer-title { max-width: 100%; }
             .pdf-viewer-modal { width: 100vw; border-right: none; box-shadow: none; }
-            body.pdf-viewer-active { --pdf-panel-width: 100vw; }
-            body.pdf-viewer-active .app-container {
-                margin: 0 auto;
-                width: calc(100% - 2rem);
-                max-width: calc(100% - 2rem);
-            }
         }
     </style>
 </head>
@@ -640,18 +634,13 @@
                 this.pdfCurrentPage = 1;
                 this.pdfZoom = 1.5;
                 this.pdfLoading = true;
-
+                
                 const viewerModal = document.getElementById('pdf-viewer-modal');
-                const popoutButton = document.getElementById('pdf-popout');
-                if (popoutButton) {
-                    popoutButton.disabled = true;
-                }
                 if (this.pdfCloseTimeout) {
                     clearTimeout(this.pdfCloseTimeout);
                     this.pdfCloseTimeout = null;
                 }
                 viewerModal.classList.remove('hidden');
-                document.body.classList.add('pdf-viewer-active');
                 requestAnimationFrame(() => viewerModal.classList.add('open'));
                 document.getElementById('pdf-viewer-title').textContent = file.name;
                 document.getElementById('pdf-loading').style.display = 'block';
@@ -724,14 +713,9 @@
 
             closePdfViewer() {
                 const viewerModal = document.getElementById('pdf-viewer-modal');
-                const popoutButton = document.getElementById('pdf-popout');
-                if (popoutButton) {
-                    popoutButton.disabled = true;
-                }
                 viewerModal.classList.remove('open');
                 this.pdfCloseTimeout = setTimeout(() => {
                     viewerModal.classList.add('hidden');
-                    document.body.classList.remove('pdf-viewer-active');
                     this.pdfCloseTimeout = null;
                 }, 350);
                 this.pdfDoc = null;
