@@ -68,7 +68,14 @@
         @keyframes spin { to { transform: rotate(360deg); } }
         
         .hidden { display: none !important; }
-        .app-container { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 2rem; }
+        .app-container { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 2rem; transition: margin 0.35s ease, width 0.35s ease, max-width 0.35s ease; }
+        body.pdf-viewer-active { --pdf-panel-width: min(50vw, 900px); }
+        body.pdf-viewer-active .app-container {
+            margin: 0;
+            margin-left: var(--pdf-panel-width);
+            width: clamp(320px, calc(100vw - var(--pdf-panel-width) - 4rem), 1400px);
+            max-width: clamp(320px, calc(100vw - var(--pdf-panel-width) - 4rem), 1400px);
+        }
         .header { backdrop-filter: blur(20px); background: var(--bg-glass); border: 1px solid var(--border); border-radius: 24px; padding: 2rem; margin-bottom: 2rem; box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1); animation: slideDown 0.6s ease-out; }
         .header-content { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1.5rem; }
         .logo-section h1 { font-size: 2rem; font-weight: 800; background: linear-gradient(135deg, var(--primary-light) 0%, var(--primary) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 0.5rem; }
@@ -224,19 +231,20 @@
         .filter-item-explanation { color: var(--text-muted); font-size: 0.9rem; line-height: 1.6; }
         
         /* PDF Viewer Modal */
-        .pdf-viewer-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.95); z-index: 3000; display: flex; flex-direction: column; }
-        .pdf-viewer-header { background: var(--bg-card); padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
+        .pdf-viewer-modal { position: fixed; top: 0; left: 0; width: min(50vw, 900px); height: 100%; background: var(--bg-card); z-index: 3000; display: flex; flex-direction: column; border-right: 1px solid var(--border); box-shadow: 12px 0 40px rgba(15, 23, 42, 0.35); transform: translateX(-100%); transition: transform 0.35s ease; }
+        .pdf-viewer-modal.open { transform: translateX(0); }
+        .pdf-viewer-header { background: var(--bg-card); padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); box-shadow: 0 6px 16px rgba(15, 23, 42, 0.18); }
         .pdf-viewer-title { font-size: 1.1rem; font-weight: 600; color: var(--text); max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .pdf-viewer-controls { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
         .pdf-zoom-controls { display: flex; gap: 0.5rem; align-items: center; }
         .pdf-zoom-value { font-size: 0.9rem; color: var(--text-muted); min-width: 60px; text-align: center; }
         .pdf-page-nav { display: flex; gap: 0.5rem; align-items: center; }
         .pdf-page-info { font-size: 0.9rem; color: var(--text-muted); min-width: 120px; text-align: center; }
-        .pdf-viewer-body { flex: 1; overflow: auto; display: flex; justify-content: center; align-items: flex-start; padding: 2rem; background: #1a1a1a; }
-        .pdf-canvas-container { background: white; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5); max-width: 100%; }
+        .pdf-viewer-body { flex: 1; overflow: auto; display: flex; justify-content: center; align-items: flex-start; padding: 2rem; background: rgba(15, 23, 42, 0.9); }
+        .pdf-canvas-container { background: white; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2); max-width: 100%; border-radius: 12px; overflow: hidden; }
         #pdfCanvas { display: block; max-width: 100%; height: auto; }
         .pdf-loading { color: white; font-size: 1.1rem; text-align: center; }
-        
+
         @media (max-width: 768px) {
             .app-container { padding: 1rem; }
             .header-content { flex-direction: column; text-align: center; }
@@ -246,6 +254,13 @@
             .modal-content { width: 95%; padding: 1.5rem; }
             .pdf-viewer-controls { flex-direction: column; align-items: stretch; gap: 0.5rem; }
             .pdf-viewer-title { max-width: 100%; }
+            .pdf-viewer-modal { width: 100vw; border-right: none; box-shadow: none; }
+            body.pdf-viewer-active { --pdf-panel-width: 100vw; }
+            body.pdf-viewer-active .app-container {
+                margin: 0 auto;
+                width: calc(100% - 2rem);
+                max-width: calc(100% - 2rem);
+            }
         }
     </style>
 </head>
@@ -423,6 +438,7 @@
                         <span class="pdf-page-info" id="pdf-page-info">Stran 1 / 1</span>
                         <button class="btn btn-secondary btn-small" onclick="app.pdfNextPage()" id="pdf-next-page">Naslednja →</button>
                     </div>
+                    <button class="btn btn-secondary btn-small" onclick="app.popOutPdfViewer()" id="pdf-popout" disabled>🗖 Odpri v novem oknu</button>
                     <button class="btn btn-primary btn-small" onclick="app.closePdfViewer()">Zapri</button>
                 </div>
             </div>
@@ -479,6 +495,7 @@
             pdfTotalPages: 0,
             pdfZoom: 1.5,
             pdfLoading: false,
+            pdfCloseTimeout: null,
             currentPdfFile: null,
 
             init() {
@@ -618,17 +635,28 @@
             async openPdfViewer(fileIndex) {
                 const file = this.files[fileIndex];
                 if (!file || file.type !== 'application/pdf') return;
-                
+
                 this.currentPdfFile = file;
                 this.pdfCurrentPage = 1;
                 this.pdfZoom = 1.5;
                 this.pdfLoading = true;
-                
-                document.getElementById('pdf-viewer-modal').classList.remove('hidden');
+
+                const viewerModal = document.getElementById('pdf-viewer-modal');
+                const popoutButton = document.getElementById('pdf-popout');
+                if (popoutButton) {
+                    popoutButton.disabled = true;
+                }
+                if (this.pdfCloseTimeout) {
+                    clearTimeout(this.pdfCloseTimeout);
+                    this.pdfCloseTimeout = null;
+                }
+                viewerModal.classList.remove('hidden');
+                document.body.classList.add('pdf-viewer-active');
+                requestAnimationFrame(() => viewerModal.classList.add('open'));
                 document.getElementById('pdf-viewer-title').textContent = file.name;
                 document.getElementById('pdf-loading').style.display = 'block';
                 document.getElementById('pdf-canvas-container').style.display = 'none';
-                
+
                 try {
                     const arrayBuffer = await file.arrayBuffer();
                     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -640,11 +668,14 @@
                     } else {
                         document.getElementById('pdf-page-nav').style.display = 'none';
                     }
-                    
+
                     await this.renderPdfPage(1);
                     this.pdfLoading = false;
                     document.getElementById('pdf-loading').style.display = 'none';
                     document.getElementById('pdf-canvas-container').style.display = 'block';
+                    if (popoutButton) {
+                        popoutButton.disabled = false;
+                    }
                 } catch (error) {
                     console.error('Napaka pri nalaganju PDF:', error);
                     this.showToast('error', 'Napaka', 'Ni mogoče naložiti PDF dokumenta');
@@ -692,12 +723,58 @@
             },
 
             closePdfViewer() {
-                document.getElementById('pdf-viewer-modal').classList.add('hidden');
+                const viewerModal = document.getElementById('pdf-viewer-modal');
+                const popoutButton = document.getElementById('pdf-popout');
+                if (popoutButton) {
+                    popoutButton.disabled = true;
+                }
+                viewerModal.classList.remove('open');
+                this.pdfCloseTimeout = setTimeout(() => {
+                    viewerModal.classList.add('hidden');
+                    document.body.classList.remove('pdf-viewer-active');
+                    this.pdfCloseTimeout = null;
+                }, 350);
                 this.pdfDoc = null;
                 this.pdfCurrentPage = 1;
                 this.pdfTotalPages = 0;
                 this.pdfZoom = 1.5;
                 this.currentPdfFile = null;
+            },
+
+            popOutPdfViewer() {
+                if (!this.currentPdfFile) {
+                    this.showToast('info', 'Ni dokumenta', 'Najprej odprite PDF predogled');
+                    return;
+                }
+
+                const fileUrl = URL.createObjectURL(this.currentPdfFile);
+                const popout = window.open('', '_blank', 'noopener,noreferrer');
+
+                if (!popout) {
+                    URL.revokeObjectURL(fileUrl);
+                    this.showToast('error', 'Blokirano', 'Brskalnik je blokiral odpiranje novega okna');
+                    return;
+                }
+
+                popout.opener = null;
+
+                const safeTitle = this.currentPdfFile.name
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+
+                popout.document.write(`<!DOCTYPE html><html lang="sl"><head><meta charset="UTF-8"><title>${safeTitle}</title><style>html,body{margin:0;height:100%;background:#111827;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}iframe{border:0;width:100%;height:100%;}</style></head><body><iframe src="${fileUrl}" title="${safeTitle}" style="width:100%;height:100%;border:0;"></iframe></body></html>`);
+                popout.document.close();
+                popout.addEventListener('beforeunload', () => URL.revokeObjectURL(fileUrl));
+                try {
+                    popout.focus();
+                } catch (error) {
+                    console.warn('Ni mogoče fokusirati novega okna:', error);
+                }
+                this.closePdfViewer();
+                this.showToast('info', 'Predogled', 'PDF je odprt v novem oknu');
             },
 
             pdfPrevPage() {
