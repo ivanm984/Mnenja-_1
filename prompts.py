@@ -2,13 +2,16 @@
 Improved for clarity, determinism, and strict JSON output.
 """
 from __future__ import annotations
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+from .municipalities import MunicipalityProfile
 
 def build_prompt(
     project_text: str,
     zahteve: List[Dict[str, Any]],
     izrazi_text: str,
-    uredba_text: str
+    uredba_text: str,
+    municipality_profile: Optional[MunicipalityProfile] = None,
 ) -> str:
     """
     Zgradi navodila za LLM, da preveri skladnost projektne dokumentacije
@@ -18,6 +21,26 @@ def build_prompt(
     zahteve_text = "".join(
         f"\nID: {z['id']}\nZahteva: {z['naslov']}\nBesedilo zahteve: {z['besedilo']}\n---"
         for z in zahteve
+    )
+
+    municipality_context_lines: List[str] = []
+    if municipality_profile:
+        municipality_context_lines.append(
+            f"Občina: {municipality_profile.name} (oznaka: {municipality_profile.slug})"
+        )
+        if municipality_profile.prompt_context:
+            municipality_context_lines.append(municipality_profile.prompt_context)
+        if municipality_profile.prompt_special_rules:
+            municipality_context_lines.append("Posebna pravila občine:")
+            municipality_context_lines.extend(
+                f"- {rule}" for rule in municipality_profile.prompt_special_rules
+            )
+
+    municipality_context = "\n".join(municipality_context_lines).strip()
+    municipality_block = (
+        f"# LOKALNI KONTEKST OBČINE\n{municipality_context}\n\n"
+        if municipality_context
+        else ""
     )
 
     return f"""\
@@ -38,10 +61,10 @@ pridobiš ustrezne podatke, presodiš skladnost z zahtevo, navedeš **dokaze** (
 - **Natančnost pred kratkostjo**: obrazložitev naj bo kvantitativna in specifična. Vedno navajaj zahtevane vrednosti iz prostorskega akta in projektirane vrednosti iz dokumentacije ter jih primerjaj (npr. 'Zahtevan FZ je največ 0.4, projektiran FZ je 0.38.')."
 - **Doslednost izrazov**: uporabi terminologijo iz OPN/OP in razlage izrazov (glej spodaj).
 - **Format izhoda**: izpiši **izključno** JSON array brez kakršnegakoli dodatnega besedila ali oznak.
-- **Konflikt med viri**: Če pride do neskladja med podatki v besedilu in na grafičnih prilogah (npr. drugačen odmik, višina ali FZ), imajo **podatki na grafičnih prilogah prednost**, 
-   saj veljajo za natančnejši prikaz dejanskega stanja. V obrazložitvi jasno navedi obe vrednosti in pojasni, katero si uporabil za presojo.
+    - **Konflikt med viri**: Če pride do neskladja med podatki v besedilu in na grafičnih prilogah (npr. drugačen odmik, višina ali FZ), imajo **podatki na grafičnih prilogah prednost**,
+     saj veljajo za natančnejši prikaz dejanskega stanja. V obrazložitvi jasno navedi obe vrednosti in pojasni, katero si uporabil za presojo.
 
-# DVOFAZNI POSTOPEK
+    {municipality_block}# DVOFAZNI POSTOPEK
 **1) Analiza besedila**
 Najprej izčrpno preglej projektno dokumentacijo (tekst) in poskušaj odgovoriti na čim več zahtev.
 V obrazložitvi vedno zapiši *katera* dejstva so bila najdena v besedilu (citiraj povzetke z merami/parametri).

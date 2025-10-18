@@ -59,8 +59,11 @@ async def call_gemini_for_details_async(project_text: str, images: List[Image.Im
 async def call_gemini_for_metadata_async(project_text: str) -> Dict[str, str]:
     """Pridobi metapodatke projekta s hitrim modelom."""
     prompt = f"""
-    Analiziraj besedilo in izlušči naslednje podatke: investitor, ime_projekta, stevilka_projekta,
-    datum_projekta, projektant in kratek_opis.
+    Analiziraj besedilo in izlušči naslednje podatke: investitor, investitor_naslov, ime_projekta,
+    stevilka_projekta, datum_projekta, projektant in kratek_opis.
+
+    "investitor_naslov" mora vsebovati celoten naslov (ulica, hišna številka, poštna številka in naselje),
+    kot je naveden v projektni dokumentaciji.
 
     Polje "kratek_opis" mora biti 2–3 stavki dolg povzetek gradnje, ki vključuje NAJMANJ naslednje
     informacije (če so razvidne): naziv objekta, tlorisne dimenzije, etažnost, višino slemena,
@@ -80,6 +83,7 @@ async def call_gemini_for_metadata_async(project_text: str) -> Dict[str, str]:
         data = json.loads(response.text)
         return {
             "investitor": data.get("investitor", "Ni podatka"),
+            "investitor_naslov": data.get("investitor_naslov", "Ni podatka"),
             "ime_projekta": data.get("ime_projekta", "Ni podatka"),
             "stevilka_projekta": data.get("stevilka_projekta", "Ni podatka"),
             "datum_projekta": data.get("datum_projekta", "Ni podatka"),
@@ -90,6 +94,7 @@ async def call_gemini_for_metadata_async(project_text: str) -> Dict[str, str]:
         print(f"⚠️ Napaka pri AI Arhivistu (flash): {exc}.")
         return {
             "investitor": "Ni podatka",
+            "investitor_naslov": "Ni podatka",
             "ime_projekta": "Ni podatka",
             "stevilka_projekta": "Ni podatka",
             "datum_projekta": "Ni podatka",

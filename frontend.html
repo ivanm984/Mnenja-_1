@@ -1029,6 +1029,14 @@
             </div>
             <p class="subtitle">Dodajte vse PDF priloge projekta. Za grafične priloge lahko določite strani, ki jih bo sistem pretvoril v slike.</p>
 
+            <div class="field-group" style="margin-bottom: 16px;">
+                <label for="municipality-select">Občina</label>
+                <select id="municipality-select" v-model="municipalitySlug" @change="handleMunicipalityChange">
+                    <option v-for="item in municipalities" :key="item.slug" :value="item.slug">{{ item.name }}</option>
+                </select>
+                <p class="subtitle" style="margin-top: 4px;">Pravila in podloge se prilagodijo izbrani občini.</p>
+            </div>
+
             <div class="upload-drop" :class="{ 'is-dragging': isDragging }" @dragenter.prevent="isDragging = true" @dragleave.prevent="isDragging = false" @dragover.prevent @drop.prevent="handleDrop">
                 <div class="upload-actions">
                     <input ref="fileInput" type="file" accept="application/pdf" multiple hidden @change="handleFileSelect" />
@@ -1077,6 +1085,10 @@
                             <div class="meta-field">
                                 <span class="meta-label">INVESTITOR</span>
                                 <span class="meta-value">{{ metadata.investitor || 'Ni podatka' }}</span>
+                            </div>
+                            <div class="meta-field">
+                                <span class="meta-label">NASLOV INVESTITORJA</span>
+                                <span class="meta-value">{{ metadata.investitor_naslov || 'Ni podatka' }}</span>
                             </div>
                             <div class="meta-field">
                                 <span class="meta-label">IME PROJEKTA</span>
@@ -1322,12 +1334,26 @@
         </div>
     </div>
 
+    <script type="application/json" id="municipalities-data">MUNICIPALITIES_JSON_PLACEHOLDER</script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
     <script>
+        const municipalitiesElement = document.getElementById('municipalities-data');
+        let MUNICIPALITIES = [];
+        try {
+            MUNICIPALITIES = municipalitiesElement ? JSON.parse(municipalitiesElement.textContent || '[]') : [];
+        } catch (error) {
+            console.warn('Ne morem prebrati seznama občin:', error);
+            MUNICIPALITIES = [];
+        }
+        const MUNICIPALITIES_INDEX = Object.fromEntries(MUNICIPALITIES.map(item => [item.slug, item]));
+        const DEFAULT_MUNICIPALITY_SLUG = 'DEFAULT_MUNICIPALITY_SLUG_PLACEHOLDER';
+
         const { createApp } = Vue;
 
         createApp({
             data() {
+                const defaultSlug = MUNICIPALITIES_INDEX[DEFAULT_MUNICIPALITY_SLUG] ? DEFAULT_MUNICIPALITY_SLUG : (MUNICIPALITIES[0]?.slug || '');
+                const initialMetadata = { ...(MUNICIPALITIES_INDEX[defaultSlug]?.default_metadata || {}) };
                 return {
                     files: [],
                     pageOverrides: {},
@@ -1336,10 +1362,12 @@
                     isBusy: false,
                     busyMessage: '',
                     sessionId: '',
+                    municipalities: MUNICIPALITIES,
+                    municipalitySlug: defaultSlug,
                     eupPairs: [],
                     initialKeyData: {},
                     keyData: {},
-                    metadata: { investitor: '', ime_projekta: '', stevilka_projekta: '', datum_projekta: '', projektant: '', kratek_opis: '' },
+                    metadata: initialMetadata,
                     requirements: [],
                     resultsMap: {},
                     editableFindings: {},
@@ -1435,6 +1463,29 @@
                 sortOption() { this.persistState(true); }
             },
             methods: {
+                municipalityBySlug(slug) {
+                    return MUNICIPALITIES_INDEX[slug] || null;
+                },
+                ensureValidMunicipalitySlug() {
+                    if (this.municipalityBySlug(this.municipalitySlug)) return this.municipalitySlug;
+                    const fallback = MUNICIPALITIES[0]?.slug || DEFAULT_MUNICIPALITY_SLUG || '';
+                    this.municipalitySlug = fallback;
+                    return this.municipalitySlug;
+                },
+                municipalityDefaults(slug) {
+                    const activeSlug = slug || this.ensureValidMunicipalitySlug();
+                    const profile = this.municipalityBySlug(activeSlug);
+                    return { ...(profile?.default_metadata || {}) };
+                },
+                applyMunicipalityDefaults(mergeExisting = true) {
+                    const defaults = this.municipalityDefaults();
+                    this.metadata = mergeExisting ? { ...defaults, ...this.metadata } : { ...defaults };
+                },
+                handleMunicipalityChange() {
+                    this.ensureValidMunicipalitySlug();
+                    this.applyMunicipalityDefaults(true);
+                    this.persistState(true);
+                },
                 heroStepClass(stepId) { const active = this.heroActiveStep; return { active: stepId === active, completed: stepId < active }; },
                 setStatus(type, message) { this.status = { type, message }; },
                 setActionState(key, state, options = {}) {
@@ -1563,12 +1614,17 @@
                     const manifest = this.files.map(item => ({ name: item.file.name, pages: (this.pageOverrides[item.id] || '').trim() }));
                     this.files.forEach(item => formData.append('pdf_files', item.file));
                     formData.append('files_meta_json', JSON.stringify(manifest));
+                    formData.append('municipality_slug', this.ensureValidMunicipalitySlug());
                     this.startLoading('Analiziram dokumente in pripravljam podatke...');
                     try {
                         const response = await fetch('/extract-data', { method: 'POST', body: formData });
                         if (!response.ok) throw new Error((await response.json()).detail || 'Napaka pri ekstrakciji.');
                         const data = await response.json();
                         this.sessionId = data.session_id;
+                        if (data.municipality_slug) {
+                            this.municipalitySlug = data.municipality_slug;
+                        }
+                        this.ensureValidMunicipalitySlug();
                         this.preparePairs(data.eup, data.namenska_raba);
                         this.prepareKeyData(data);
                         this.requirements = []; this.resultsMap = {}; this.prepareEditableResults();
@@ -1591,14 +1647,25 @@
                         const val = data[key] || 'Ni podatka v dokumentaciji';
                         this.initialKeyData[key] = val; this.keyData[key] = val;
                     });
-                    this.metadata = {
-                        investitor: data.investitor,
-                        ime_projekta: data.ime_projekta,
-                        stevilka_projekta: data.stevilka_projekta,
-                        datum_projekta: data.datum_projekta,
-                        projektant: data.projektant,
-                        kratek_opis: data.kratek_opis
-                    };
+                    const defaults = this.municipalityDefaults(data.municipality_slug || this.municipalitySlug);
+                    const metadataKeys = [
+                        'investitor', 'investitor_naslov', 'investitor1_ime', 'investitor1_naslov',
+                        'ime_projekta', 'stevilka_projekta', 'datum_projekta', 'projektant', 'kratek_opis',
+                        'mnenjedajalec', 'mnenjedajalec_naziv', 'mnenjedajalec_naslov',
+                        'postopek_vodil', 'odgovorna_oseba', 'izdelovalec_porocila',
+                        'predpisi', 'stevilka_porocila', 'pvo_status'
+                    ];
+                    const nextMetadata = { ...defaults };
+                    metadataKeys.forEach(key => {
+                        if (data[key] !== undefined && data[key] !== null) nextMetadata[key] = data[key];
+                    });
+                    if (!nextMetadata.investitor1_ime && nextMetadata.investitor) {
+                        nextMetadata.investitor1_ime = nextMetadata.investitor;
+                    }
+                    if (!nextMetadata.investitor1_naslov && nextMetadata.investitor_naslov) {
+                        nextMetadata.investitor1_naslov = nextMetadata.investitor_naslov;
+                    }
+                    this.metadata = nextMetadata;
                 },
                 async runAnalysis(extra = {}) {
                     if (!this.sessionId) { this.setStatus('error', 'Seja ni aktivna.'); return; }
@@ -1740,6 +1807,7 @@
                     if (!this.sessionId) return null;
                     return {
                         sessionId: this.sessionId, eupPairs: this.eupPairs, keyData: this.keyData,
+                        municipalitySlug: this.ensureValidMunicipalitySlug(),
                         initialKeyData: this.initialKeyData, metadata: this.metadata, requirements: this.requirements,
                         resultsMap: this.resultsMap, editableFindings: this.editableFindings,
                         editableActions: this.editableActions, initialEditableFindings: this.initialEditableFindings,
@@ -1760,6 +1828,8 @@
                         const raw = localStorage.getItem(this.storageKey); if (!raw) return;
                         const state = JSON.parse(raw); if (!state || !state.sessionId) return;
                         Object.keys(state).forEach(key => { this[key] = state[key]; });
+                        this.ensureValidMunicipalitySlug();
+                        this.applyMunicipalityDefaults(true);
                         if (!this.sortOption) this.sortOption = 'default';
                         this.setStatus('success', 'Obnovljena je bila lokalno shranjena seja.');
                         this.highlightedSession = { ...state, source: 'local' };
@@ -1852,6 +1922,10 @@
                     else this.setStatus('success', 'Lokalna seja odstranjena.');
                     this.highlightedSession = this.savedSessions.length ? this.savedSessions[0] : null;
                 }
+            },
+            created() {
+                this.ensureValidMunicipalitySlug();
+                this.applyMunicipalityDefaults(true);
             },
             mounted() {
                 this.restoreFromLocal();
