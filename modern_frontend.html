@@ -645,50 +645,51 @@
 
             // PDF Viewer Methods
             async openPdfViewer(fileIndex) {
-                const file = this.files[fileIndex];
-                if (!file || file.type !== 'application/pdf') return;
-
-                this.currentPdfFile = file;
-                this.pdfCurrentPage = 1;
-                this.pdfZoom = 1.5;
-                this.pdfLoading = true;
-                
-                const viewerModal = document.getElementById('pdf-viewer-modal');
-                if (this.pdfCloseTimeout) {
-                    clearTimeout(this.pdfCloseTimeout);
-                    this.pdfCloseTimeout = null;
-                }
-                viewerModal.classList.remove('hidden');
-                requestAnimationFrame(() => viewerModal.classList.add('open'));
-                document.getElementById('pdf-viewer-title').textContent = file.name;
-                document.getElementById('pdf-loading').style.display = 'block';
-                document.getElementById('pdf-canvas-container').style.display = 'none';
-
-                try {
-                    const arrayBuffer = await file.arrayBuffer();
-                    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-                    this.pdfDoc = pdf;
-                    this.pdfTotalPages = pdf.numPages;
-                    
-                    if (this.pdfTotalPages > 1) {
-                        document.getElementById('pdf-page-nav').style.display = 'flex';
-                    } else {
-                        document.getElementById('pdf-page-nav').style.display = 'none';
-                    }
-
-                    await this.renderPdfPage(1);
-                    this.pdfLoading = false;
-                    document.getElementById('pdf-loading').style.display = 'none';
-                    document.getElementById('pdf-canvas-container').style.display = 'block';
-                    if (popoutButton) {
-                        popoutButton.disabled = false;
-                    }
-                } catch (error) {
-                    console.error('Napaka pri nalaganju PDF:', error);
-                    this.showToast('error', 'Napaka', 'Ni mogoče naložiti PDF dokumenta');
-                    this.closePdfViewer();
-                }
-            },
+            const file = this.files[fileIndex];
+            if (!file || file.type !== 'application/pdf') return;
+        
+            this.currentPdfFile = file;
+            this.pdfCurrentPage = 1;
+            this.pdfZoom = 1.5;
+            this.pdfLoading = true;
+    
+            const viewerModal = document.getElementById('pdf-viewer-modal');
+            if (this.pdfCloseTimeout) {
+                clearTimeout(this.pdfCloseTimeout);
+                this.pdfCloseTimeout = null;
+            }
+            viewerModal.classList.remove('hidden');
+            requestAnimationFrame(() => viewerModal.classList.add('open'));
+            document.getElementById('pdf-viewer-title').textContent = file.name;
+            document.getElementById('pdf-loading').style.display = 'block';
+            document.getElementById('pdf-canvas-container').style.display = 'none';
+        
+            try {
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            this.pdfDoc = pdf;
+            this.pdfTotalPages = pdf.numPages;
+            
+            if (this.pdfTotalPages > 1) {
+                document.getElementById('pdf-page-nav').style.display = 'flex';
+            } else {
+                document.getElementById('pdf-page-nav').style.display = 'none';
+            }
+    
+            await this.renderPdfPage(1);
+            this.pdfLoading = false;
+            document.getElementById('pdf-loading').style.display = 'none';
+            document.getElementById('pdf-canvas-container').style.display = 'block';
+            
+            // ✅ POPRAVLJENA VRSTICA:
+            this.setPdfPopoutEnabled(true);
+        
+            } catch (error) {
+                console.error('Napaka pri nalaganju PDF:', error);
+                this.showToast('error', 'Napaka', 'Ni mogoče naložiti PDF dokumenta');
+                this.closePdfViewer();
+            }
+                },
 
             async renderPdfPage(pageNum) {
                 if (!this.pdfDoc || pageNum < 1 || pageNum > this.pdfTotalPages) return;
