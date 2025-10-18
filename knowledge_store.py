@@ -27,12 +27,8 @@ from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 
-from .config import (
-    DATABASE_URL,
-    DEFAULT_MUNICIPALITY_NAME,
-    DEFAULT_MUNICIPALITY_SLUG,
-    PROJECT_ROOT,
-)
+from .config import DATABASE_URL, PROJECT_ROOT
+from .municipalities import list_municipality_profiles
 
 logger = logging.getLogger(__name__)
 
@@ -394,7 +390,10 @@ class KnowledgeBaseRepository:
 
 
 knowledge_repository = KnowledgeBaseRepository(DATABASE_URL)
-knowledge_repository.ensure_bootstrap(DEFAULT_MUNICIPALITY_SLUG, DEFAULT_MUNICIPALITY_NAME)
+for municipality_profile in list_municipality_profiles():
+    knowledge_repository.ensure_bootstrap(
+        municipality_profile.knowledge_slug, municipality_profile.name
+    )
 
 __all__ = [
     "KnowledgeMunicipality",

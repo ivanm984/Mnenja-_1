@@ -8,7 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional
 try:  # pragma: no cover - optional dependency import guard
     from openpyxl import load_workbook
     from openpyxl.utils.cell import coordinate_to_tuple
-    from openpyxl.styles import Alignment
+    from openpyxl.styles import Alignment, Font
 except ImportError as exc:  # pragma: no cover - import guard
     raise RuntimeError(
         "Knjižnica 'openpyxl' ni nameščena. Namestite jo z `pip install openpyxl`."
@@ -195,6 +195,8 @@ def _build_wrapped_alignment(alignment: Optional[Alignment]) -> Alignment:
 
     return Alignment(wrap_text=True, vertical="top")
 
+BLACK_FONT_COLOR = "FF000000"
+
 
 def _apply_wrap_text(cell) -> None:
     try:
@@ -205,11 +207,23 @@ def _apply_wrap_text(cell) -> None:
     cell.alignment = _build_wrapped_alignment(current)
 
 
+def _apply_text_format(cell) -> None:
+    _apply_wrap_text(cell)
+    current_font = getattr(cell, "font", None)
+    if current_font is not None:
+        try:
+            cell.font = current_font.copy(color=BLACK_FONT_COLOR)
+            return
+        except AttributeError:
+            pass
+    cell.font = Font(color=BLACK_FONT_COLOR)
+
+
 def _set_cell_value(worksheet, cell: str, value: Any) -> None:
     try:
         target = worksheet[cell]
         target.value = value
-        _apply_wrap_text(target)
+        _apply_text_format(target)
         return
     except AttributeError as exc:
         if "MergedCell" not in str(exc):
@@ -225,7 +239,7 @@ def _set_cell_value(worksheet, cell: str, value: Any) -> None:
                     row=merged_range.min_row, column=merged_range.min_col
                 )
                 base_cell.value = value
-                _apply_wrap_text(base_cell)
+                _apply_text_format(base_cell)
                 return
 
         # If the cell is not part of a merged range re-raise the original error.
@@ -255,7 +269,12 @@ def generate_priloga_10a(
     _set_cell_value(worksheet, "C7", _clean(metadata.get("mnenjedajalec", "Avtomatski pregled skladnosti")))
     _set_cell_value(worksheet, "C9", _clean(metadata.get("stevilka_porocila", "Ni podatka")))
     _set_cell_value(worksheet, "C10", datetime.now().strftime("%d.%m.%Y"))
-    _set_cell_value(worksheet, "C11", _format_predpis(zahteve))
+    predpisi_text = _clean(metadata.get("predpisi", ""), "")
+    _set_cell_value(
+        worksheet,
+        "C11",
+        predpisi_text if predpisi_text else _format_predpis(zahteve),
+    )
     _set_cell_value(worksheet, "C12", _clean(metadata.get("postopek_vodil", "Ni podatka")))
     _set_cell_value(worksheet, "C14", _clean(metadata.get("odgovorna_oseba", "Ni podatka")))
 

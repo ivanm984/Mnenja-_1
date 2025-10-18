@@ -28,6 +28,7 @@ from .knowledge_base import (
     get_izrazi_text,
     get_uredba_text,
 )
+from .municipalities import get_municipality_profile
 from .parsers import convert_pdf_pages_to_images, parse_pdf
 from .prompts import build_prompt
 from .reporting import generate_word_report
@@ -106,6 +107,7 @@ async def remove_saved_session(session_id: str):
 async def extract_data(
     pdf_files: List[UploadFile] = File(...),
     files_meta_json: Optional[str] = Form(None),
+    municipality_slug: Optional[str] = Form(None),
 ):
     start_time = time.perf_counter()
     session_id = str(start_time)
@@ -152,27 +154,50 @@ async def extract_data(
     image_paths = await save_images_for_session(session_id, all_images)
     project_text = "\n\n".join(combined_text_parts)
 
-    logger.info(f"[{session_id}] Začenjam vzporedne klice na Gemini API...")
+    profile = get_municipality_profile(municipality_slug)
+
+    logger.info(
+        f"[{session_id}] Začenjam vzporedne klice na Gemini API za občino {profile.slug}..."
+    )
     gemini_start_time = time.perf_counter()
 
     details_task = call_gemini_for_details_async(project_text, all_images)
     metadata_task = call_gemini_for_metadata_async(project_text)
     key_data_task = call_gemini_for_key_data_async(project_text, all_images)
 
-    ai_details, metadata, key_data = await asyncio.gather(details_task, metadata_task, key_data_task)
+    ai_details, metadata, key_data = await asyncio.gather(
+        details_task, metadata_task, key_data_task
+    )
 
     gemini_duration = time.perf_counter() - gemini_start_time
     logger.info(f"[{session_id}] Klici na Gemini API končani v {gemini_duration:.2f} sekundah.")
 
+    merged_metadata = {**profile.default_metadata, **metadata}
+    investor_name = (merged_metadata.get("investitor") or "").strip()
+    investor_address = (merged_metadata.get("investitor_naslov") or "").strip()
+    merged_metadata["investitor1_ime"] = investor_name
+    merged_metadata["investitor1_naslov"] = investor_address
+
     session_data = {
-        "project_text": project_text, "image_paths": image_paths, "metadata": metadata,
-        "ai_details": ai_details, "key_data": key_data, "source_files": files_manifest
+        "project_text": project_text,
+        "image_paths": image_paths,
+        "metadata": merged_metadata,
+        "ai_details": ai_details,
+        "key_data": key_data,
+        "source_files": files_manifest,
+        "municipality_slug": profile.slug,
+        "municipality_name": profile.name,
     }
     await cache_manager.store_session_data(session_id, session_data)
 
     response_data = {
-        "session_id": session_id, "eup": ai_details.get("eup", []),
-        "namenska_raba": ai_details.get("namenska_raba", []), **metadata, **key_data
+        "session_id": session_id,
+        "municipality_slug": profile.slug,
+        "municipality_name": profile.name,
+        "eup": ai_details.get("eup", []),
+        "namenska_raba": ai_details.get("namenska_raba", []),
+        **merged_metadata,
+        **key_data,
     }
 
     total_duration = time.perf_counter() - start_time
@@ -199,7 +224,13 @@ async def analyze_report(payload: AnalysisReportPayload):
     if not final_raba_list_cleaned:
         raise HTTPException(status_code=400, detail="Namenska raba manjka.")
 
-    zahteve = build_requirements_from_db(final_eup_list_cleaned, final_raba_list_cleaned, data["project_text"])
+    municipality_profile = get_municipality_profile(data.get("municipality_slug"))
+    zahteve = build_requirements_from_db(
+        final_eup_list_cleaned,
+        final_raba_list_cleaned,
+        data["project_text"],
+        municipality_slug=municipality_profile.slug,
+    )
     zahteve_za_analizo = [z for z in zahteve if z["id"] in payload.selected_ids] if payload.selected_ids else list(zahteve)
 
     if not zahteve_za_analizo:
@@ -207,9 +238,21 @@ async def analyze_report(payload: AnalysisReportPayload):
 
     final_key_data = payload.key_data.dict()
 
+    municipality_context_lines = [
+        f"Občina: {municipality_profile.name} (oznaka: {municipality_profile.slug})",
+    ]
+    if municipality_profile.prompt_context:
+        municipality_context_lines.append(municipality_profile.prompt_context)
+    municipality_context_lines.extend(
+        f"- {rule}" for rule in municipality_profile.prompt_special_rules if rule
+    )
+    municipality_context_block = "\n".join(municipality_context_lines).strip()
+
     modified_project_text = f"""
         --- METAPODATKI PROJEKTA ---
         {data.get('metadata', {})}
+        --- KONTEKST OBČINE ---
+        {municipality_context_block}
         --- KLJUČNI GABARITNI IN LOKACIJSKI PODATKI PROJEKTA (Ekstrahirano in POTRJENO) ---
         {final_key_data}
         --- DOKUMENTACIJA (Besedilo in grafike) ---
@@ -217,11 +260,17 @@ async def analyze_report(payload: AnalysisReportPayload):
         """
 
     zahteve_chunks = list(chunk_list(zahteve_za_analizo, ANALYSIS_CHUNK_SIZE))
-    izrazi_text = get_izrazi_text()
-    uredba_text = get_uredba_text()
+    izrazi_text = get_izrazi_text(municipality_profile.slug)
+    uredba_text = get_uredba_text(municipality_profile.slug)
     tasks = []
     for chunk in zahteve_chunks:
-        prompt = build_prompt(modified_project_text, chunk, izrazi_text, uredba_text)
+        prompt = build_prompt(
+            modified_project_text,
+            chunk,
+            izrazi_text,
+            uredba_text,
+            municipality_profile=municipality_profile,
+        )
         task = call_gemini_async(prompt, images_for_analysis)
         tasks.append(task)
     
@@ -250,8 +299,13 @@ async def analyze_report(payload: AnalysisReportPayload):
             requirement_revisions.setdefault(rev_id, []).append(rev)
 
     final_report_data = {
-        "zahteve": zahteve, "results_map": combined_results_map, "metadata": data.get("metadata", {}),
-        "final_key_data": final_key_data, "source_files": data.get("source_files", [])
+        "zahteve": zahteve,
+        "results_map": combined_results_map,
+        "metadata": data.get("metadata", {}),
+        "final_key_data": final_key_data,
+        "source_files": data.get("source_files", []),
+        "municipality_slug": municipality_profile.slug,
+        "municipality_name": municipality_profile.name,
     }
     await cache_manager.store_session_data(f"report:{session_id}", final_report_data)
 

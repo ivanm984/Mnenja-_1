@@ -6,8 +6,8 @@ import re
 from functools import lru_cache
 from typing import Any, Dict, List, Optional, Pattern, Tuple
 
-from .config import DEFAULT_MUNICIPALITY_NAME, DEFAULT_MUNICIPALITY_SLUG
 from .knowledge_store import knowledge_repository
+from .municipalities import get_municipality_profile
 
 KEYWORD_TO_CLEN = {
     # Gradnja in objekti
@@ -83,8 +83,9 @@ def format_uredba_summary(uredba_data: Dict[str, Any]) -> str:
 def load_knowledge_base(
     municipality_slug: str | None = None,
 ) -> Tuple[Dict, Dict, List, Dict, str, str]:
-    slug = municipality_slug or DEFAULT_MUNICIPALITY_SLUG
-    knowledge_repository.ensure_bootstrap(slug, DEFAULT_MUNICIPALITY_NAME)
+    profile = get_municipality_profile(municipality_slug)
+    slug = profile.knowledge_slug
+    knowledge_repository.ensure_bootstrap(slug, profile.name)
 
     opn_katalog = knowledge_repository.load_document_json(slug, "core", "opn")
     if not isinstance(opn_katalog, dict):
@@ -221,9 +222,14 @@ def build_priloga1_text(
 
 
 def build_requirements_from_db(
-    eup_list: List[str], raba_list: List[str], project_text: str
+    eup_list: List[str],
+    raba_list: List[str],
+    project_text: str,
+    municipality_slug: str | None = None,
 ) -> List[Dict[str, Any]]:
-    opn_katalog, priloge, _, clen_data_map, _, _ = load_knowledge_base()
+    opn_katalog, priloge, _, clen_data_map, _, _ = load_knowledge_base(
+        municipality_slug
+    )
 
     zahteve: List[Dict[str, Any]] = []
     dodani_cleni, dodane_namenske_rabe = set(), set()
