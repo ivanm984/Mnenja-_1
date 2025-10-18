@@ -224,19 +224,20 @@
         .filter-item-explanation { color: var(--text-muted); font-size: 0.9rem; line-height: 1.6; }
         
         /* PDF Viewer Modal */
-        .pdf-viewer-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.95); z-index: 3000; display: flex; flex-direction: column; }
-        .pdf-viewer-header { background: var(--bg-card); padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
+        .pdf-viewer-modal { position: fixed; top: 0; left: 0; width: min(50vw, 900px); height: 100%; background: var(--bg-card); z-index: 3000; display: flex; flex-direction: column; border-right: 1px solid var(--border); box-shadow: 12px 0 40px rgba(15, 23, 42, 0.35); transform: translateX(-100%); transition: transform 0.35s ease; }
+        .pdf-viewer-modal.open { transform: translateX(0); }
+        .pdf-viewer-header { background: var(--bg-card); padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); box-shadow: 0 6px 16px rgba(15, 23, 42, 0.18); }
         .pdf-viewer-title { font-size: 1.1rem; font-weight: 600; color: var(--text); max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .pdf-viewer-controls { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
         .pdf-zoom-controls { display: flex; gap: 0.5rem; align-items: center; }
         .pdf-zoom-value { font-size: 0.9rem; color: var(--text-muted); min-width: 60px; text-align: center; }
         .pdf-page-nav { display: flex; gap: 0.5rem; align-items: center; }
         .pdf-page-info { font-size: 0.9rem; color: var(--text-muted); min-width: 120px; text-align: center; }
-        .pdf-viewer-body { flex: 1; overflow: auto; display: flex; justify-content: center; align-items: flex-start; padding: 2rem; background: #1a1a1a; }
-        .pdf-canvas-container { background: white; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5); max-width: 100%; }
+        .pdf-viewer-body { flex: 1; overflow: auto; display: flex; justify-content: center; align-items: flex-start; padding: 2rem; background: rgba(15, 23, 42, 0.9); }
+        .pdf-canvas-container { background: white; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2); max-width: 100%; border-radius: 12px; overflow: hidden; }
         #pdfCanvas { display: block; max-width: 100%; height: auto; }
         .pdf-loading { color: white; font-size: 1.1rem; text-align: center; }
-        
+
         @media (max-width: 768px) {
             .app-container { padding: 1rem; }
             .header-content { flex-direction: column; text-align: center; }
@@ -246,6 +247,7 @@
             .modal-content { width: 95%; padding: 1.5rem; }
             .pdf-viewer-controls { flex-direction: column; align-items: stretch; gap: 0.5rem; }
             .pdf-viewer-title { max-width: 100%; }
+            .pdf-viewer-modal { width: 100vw; border-right: none; box-shadow: none; }
         }
     </style>
 </head>
@@ -479,6 +481,7 @@
             pdfTotalPages: 0,
             pdfZoom: 1.5,
             pdfLoading: false,
+            pdfCloseTimeout: null,
             currentPdfFile: null,
 
             init() {
@@ -624,7 +627,13 @@
                 this.pdfZoom = 1.5;
                 this.pdfLoading = true;
                 
-                document.getElementById('pdf-viewer-modal').classList.remove('hidden');
+                const viewerModal = document.getElementById('pdf-viewer-modal');
+                if (this.pdfCloseTimeout) {
+                    clearTimeout(this.pdfCloseTimeout);
+                    this.pdfCloseTimeout = null;
+                }
+                viewerModal.classList.remove('hidden');
+                requestAnimationFrame(() => viewerModal.classList.add('open'));
                 document.getElementById('pdf-viewer-title').textContent = file.name;
                 document.getElementById('pdf-loading').style.display = 'block';
                 document.getElementById('pdf-canvas-container').style.display = 'none';
@@ -692,7 +701,12 @@
             },
 
             closePdfViewer() {
-                document.getElementById('pdf-viewer-modal').classList.add('hidden');
+                const viewerModal = document.getElementById('pdf-viewer-modal');
+                viewerModal.classList.remove('open');
+                this.pdfCloseTimeout = setTimeout(() => {
+                    viewerModal.classList.add('hidden');
+                    this.pdfCloseTimeout = null;
+                }, 350);
                 this.pdfDoc = null;
                 this.pdfCurrentPage = 1;
                 this.pdfTotalPages = 0;
