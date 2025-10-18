@@ -1761,20 +1761,51 @@
                     } catch (error) { console.warn('Ni mogoče obnoviti seje:', error); }
                 },
                 async saveProgress() {
-                    const state = this.collectState(); if (!state) { this.markActionResult('save', 'error'); return; }
-                    this.markActionWorking('save'); this.persistState(); this.startLoading('Shranjujem analizo...');
+                    const state = this.collectState();
+                    if (!state) {
+                        this.markActionResult('save', 'error');
+                        this.setStatus('error', 'Seja ni aktivna.');
+                        return;
+                    }
+
+                    this.markActionWorking('save');
+                    this.persistState();
+                    this.startLoading('Shranjujem analizo...');
+
                     try {
-                        await fetch('/save-session', {
-                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        const response = await fetch('/save-session', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                session_id: this.sessionId, data: state,
+                                session_id: this.sessionId,
+                                data: state,
                                 project_name: state.metadata?.ime_projekta || undefined,
                                 summary: this.analysisSummary || undefined
                             })
                         });
-                        this.fetchSavedSessions(true); this.markActionResult('save', 'success');
+
+                        const result = await response.json().catch(() => ({}));
+                        if (!response.ok) {
+                            const message = result?.detail || result?.message || 'Shranjevanje ni uspelo.';
+                            throw new Error(message);
+                        }
+
+                        if (result?.session_id) {
+                            this.highlightedSession = {
+                                session_id: result.session_id,
+                                project_name: result.project_name || 'Neimenovan projekt',
+                                summary: result.summary || '',
+                                source: 'remote'
+                            };
+                        }
+
+                        await this.fetchSavedSessions(true);
+                        this.markActionResult('save', 'success');
                         this.stopLoading('success', 'Analiza je shranjena.');
-                    } catch (error) { this.markActionResult('save', 'error'); this.stopLoading('error', 'Shranjevanje ni uspelo.'); }
+                    } catch (error) {
+                        this.markActionResult('save', 'error');
+                        this.stopLoading('error', error?.message || 'Shranjevanje ni uspelo.');
+                    }
                 },
                 async fetchSavedSessions(force = false) {
                     if (this.savedSessionsLoading) return;
