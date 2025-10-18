@@ -491,12 +491,16 @@
             pdfLoading: false,
             pdfCloseTimeout: null,
             currentPdfFile: null,
+            pdfPopoutButton: null,
 
             init() {
                 const savedTheme = localStorage.getItem('theme') || 'dark';
                 document.body.className = `${savedTheme}-mode`;
                 document.getElementById('theme-icon').textContent = savedTheme === 'dark' ? '🌙' : '☀️';
-                
+
+                this.pdfPopoutButton = document.getElementById('pdf-popout');
+                this.setPdfPopoutEnabled(false);
+
                 const uploadZone = document.getElementById('upload-zone');
                 uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('dragging'); });
                 uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragging'));
@@ -505,6 +509,20 @@
                     uploadZone.classList.remove('dragging');
                     this.addFiles(Array.from(e.dataTransfer.files));
                 });
+            },
+
+            getPdfPopoutButton() {
+                if (!this.pdfPopoutButton || !document.body.contains(this.pdfPopoutButton)) {
+                    this.pdfPopoutButton = document.getElementById('pdf-popout');
+                }
+                return this.pdfPopoutButton;
+            },
+
+            setPdfPopoutEnabled(isEnabled) {
+                const button = this.getPdfPopoutButton();
+                if (button) {
+                    button.disabled = !isEnabled;
+                }
             },
 
             toggleTheme() {
