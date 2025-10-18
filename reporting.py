@@ -61,7 +61,9 @@ def generate_word_report(
     if neskladja:
         p = doc.add_paragraph("Ugotovljena so bila neskladja v naslednjih točkah oziroma členih:")
         for tocka in neskladja:
-            doc.add_paragraph(tocka, style="List Bullet")
+            bullet = doc.add_paragraph(tocka, style="List Bullet")
+            for run in bullet.runs:
+                run.font.color.rgb = noncompliant_color
     doc.add_paragraph()
 
     kategorije = {}
@@ -107,7 +109,7 @@ def generate_word_report(
 
             skladnost_p = row_cells[2].paragraphs[0]
             skladnost_p.add_run("Skladnost:\n").bold = True
-            skladnost_p.add_run(result.get("skladnost", "Neznano"))
+            skladnost_run = skladnost_p.add_run(result.get("skladnost", "Neznano"))
             ukrep_text = result.get("predlagani_ukrep", "—")
             if ukrep_text and ukrep_text != "—":
                 skladnost_p.add_run("\n\nPredlagani ukrepi:\n").bold = True
@@ -117,8 +119,7 @@ def generate_word_report(
                 for paragraph in (pogoj_p, obrazlozitev_p):
                     for run in paragraph.runs:
                         run.font.color.rgb = noncompliant_color
-                for run in skladnost_p.runs:
-                    run.font.color.rgb = noncompliant_color
+                skladnost_run.font.color.rgb = noncompliant_color
 
     doc.save(output_path)
     return str(Path(output_path).resolve())
