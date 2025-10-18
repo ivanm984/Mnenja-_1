@@ -17,6 +17,8 @@ class SaveSessionPayload(BaseModel):
 class ConfirmReportPayload(BaseModel):
     session_id: str
     excluded_ids: Optional[List[str]] = Field(default_factory=list)
+    updated_results_map: Dict[str, Any] = Field(default_factory=dict)
+    updated_key_data: Dict[str, Any] = Field(default_factory=dict)
 
 
 class KeyDataPayload(BaseModel):

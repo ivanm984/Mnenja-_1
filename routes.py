@@ -452,6 +452,39 @@ async def confirm_report(payload: ConfirmReportPayload, background_tasks: Backgr
     if not cache:
         raise HTTPException(status_code=404, detail="Analiza za generiranje poročila ni na voljo.")
 
+    results_updated = False
+    if payload.updated_results_map:
+        existing_map = cache.get("results_map") or {}
+        merged_map: Dict[str, Dict[str, Any]] = {}
+        if isinstance(existing_map, dict):
+            for key, value in existing_map.items():
+                if isinstance(value, dict):
+                    merged_map[str(key)] = value.copy()
+        for key, value in payload.updated_results_map.items():
+            if not isinstance(value, dict):
+                continue
+            key_str = str(key)
+            base = merged_map.get(key_str, {})
+            merged_map[key_str] = {**base, **value}
+            results_updated = True
+        if results_updated:
+            cache["results_map"] = merged_map
+
+    key_data_updated = False
+    if payload.updated_key_data:
+        existing_key_data = cache.get("final_key_data")
+        merged_key_data: Dict[str, Any] = {}
+        if isinstance(existing_key_data, dict):
+            merged_key_data.update(existing_key_data)
+        if isinstance(payload.updated_key_data, dict):
+            merged_key_data.update(payload.updated_key_data)
+            key_data_updated = True
+        if key_data_updated:
+            cache["final_key_data"] = merged_key_data
+
+    if results_updated or key_data_updated:
+        await cache_manager.store_session_data(cache_key, cache)
+
     excluded_ids = set(payload.excluded_ids or [])
     filtered_zahteve = [z for z in cache.get("zahteve", []) if z.get("id") not in excluded_ids]
     
