@@ -36,7 +36,7 @@ async def call_gemini_for_details_async(project_text: str, images: List[Image.Im
     """Pridobi EUP in rabo s hitrim modelom."""
     prompt = f"""
     Analiziraj spodnje besedilo iz projektne dokumentacije in slike. Tvoja naloga je najti dve informaciji:
-    1.  **Enota Urejanja Prostora (EUP)**: Poiščiustrezne oznake enote urejanja prostora v besedilu ali grafiki (slikah), pri čemer je za večino objektov EUP samo eden! Za gradbeno    
+    1.  **Enota Urejanja Prostora (EUP)**: Poišči ustrezne oznake enote urejanja prostora v besedilu ali grafiki (slikah), pri čemer je za večino objektov EUP samo eden! Za gradbeno    
     inženirske in linijske objekta pa je lahko EUP več!
     2.  **Podrobnejša namenska raba**: Poišči kratice (npr. 'SSe', 'SK') ali druge oznake namenske rabe. Enako kot zgoraj je za veliko večino primerov visokegradnje namenska raba 
     samo ena.
@@ -65,15 +65,14 @@ async def call_gemini_for_metadata_async(project_text: str) -> Dict[str, str]:
     "investitor_naslov" mora vsebovati celoten naslov (ulica, hišna številka, poštna številka in naselje),
     kot je naveden v projektni dokumentaciji.
 
-    Polje "kratek_opis" mora biti 2–3 stavki dolg povzetek gradnje, ki vključuje NAJMANJ naslednje
+    Polje "kratek_opis" mora biti 3 do 4 stavki dolg povzetek gradnje, ki vključuje NAJMANJ naslednje
     informacije (če so razvidne): naziv objekta, tlorisne dimenzije, etažnost, višino slemena,
-    naklon strehe, smer slemena in vrsto kritine. Če posamezen podatek ni razviden, jasno zapiši,
-    da ga dokumentacija ne navaja.
+    naklon strehe, smer slemena in vrsto kritine. Če posamezen podatek ni razviden, ni potrebno zapisati da ga ne najdeš.
 
     Primer kratkega opisa (samo kot slogovna usmeritev – podatke vedno vzemi iz gradiva):
     "Predmet gradnje je stanovanjska hiša, tlorisnih dimenzij 10×8 m. Etažnost objekta je pritličje +
     mansarda (P+M), streha je simetrična dvokapnica v smeri daljše stranice objekta (V–Z) z naklonom
-    40°. Višina slemena znaša 10 m, kritina pa je načrtovana kot opečna."
+    40°. Višina slemena znaša 10 m, kritina pa je načrtovana kot opečna. Fasada bo v svetlih tonih, z manjšimi temnimi poudarki"
 
     Odgovori SAMO v JSON formatu z zgoraj naštetimi ključi. Če podatka ni, uporabi "Ni podatka".
     Besedilo dokumentacije: --- {project_text[:20000]} ---
