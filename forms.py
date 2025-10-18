@@ -134,35 +134,17 @@ def _apply_wrap_text(cell) -> None:
         current = None
 
     if current:
-        params = {
-            "horizontal": current.horizontal,
-            "vertical": current.vertical,
-            "textRotation": current.text_rotation,
-            "wrapText": True,
-            "shrinkToFit": current.shrink_to_fit,
-            "indent": current.indent,
-            "relativeIndent": getattr(
-                current,
-                "relativeIndent",
-                getattr(current, "relative_indent", None),
-            ),
-            "justifyLastLine": getattr(
-                current,
-                "justifyLastLine",
-                getattr(current, "justify_last_line", None),
-            ),
-            "readingOrder": getattr(
-                current,
-                "readingOrder",
-                getattr(current, "reading_order", None),
-            ),
-        }
-
-        # Remove None values to avoid passing unsupported kwargs.
-        filtered_params = {k: v for k, v in params.items() if v is not None}
-        cell.alignment = Alignment(**filtered_params)
-        if cell.alignment.vertical is None:
-            cell.alignment = cell.alignment.copy(vertical="top")
+        cell.alignment = Alignment(
+            horizontal=current.horizontal,
+            vertical=current.vertical,
+            text_rotation=current.text_rotation,
+            wrap_text=True,
+            shrink_to_fit=current.shrink_to_fit,
+            indent=current.indent,
+            relative_indent=getattr(current, "relative_indent", 0),
+            justify_last_line=getattr(current, "justify_last_line", False),
+            reading_order=getattr(current, "reading_order", 0),
+        )
     else:
         cell.alignment = Alignment(wrap_text=True, vertical="top")
 
