@@ -255,12 +255,6 @@
             .pdf-viewer-controls { flex-direction: column; align-items: stretch; gap: 0.5rem; }
             .pdf-viewer-title { max-width: 100%; }
             .pdf-viewer-modal { width: 100vw; border-right: none; box-shadow: none; }
-            body.pdf-viewer-active { --pdf-panel-width: 100vw; }
-            body.pdf-viewer-active .app-container {
-                margin: 0 auto;
-                width: calc(100% - 2rem);
-                max-width: calc(100% - 2rem);
-            }
         }
     </style>
 </head>
@@ -658,15 +652,13 @@
                 this.pdfCurrentPage = 1;
                 this.pdfZoom = 1.5;
                 this.pdfLoading = true;
-
+                
                 const viewerModal = document.getElementById('pdf-viewer-modal');
-                this.setPdfPopoutEnabled(false);
                 if (this.pdfCloseTimeout) {
                     clearTimeout(this.pdfCloseTimeout);
                     this.pdfCloseTimeout = null;
                 }
                 viewerModal.classList.remove('hidden');
-                document.body.classList.add('pdf-viewer-active');
                 requestAnimationFrame(() => viewerModal.classList.add('open'));
                 document.getElementById('pdf-viewer-title').textContent = file.name;
                 document.getElementById('pdf-loading').style.display = 'block';
@@ -688,7 +680,9 @@
                     this.pdfLoading = false;
                     document.getElementById('pdf-loading').style.display = 'none';
                     document.getElementById('pdf-canvas-container').style.display = 'block';
-                    this.setPdfPopoutEnabled(true);
+                    if (popoutButton) {
+                        popoutButton.disabled = false;
+                    }
                 } catch (error) {
                     console.error('Napaka pri nalaganju PDF:', error);
                     this.showToast('error', 'Napaka', 'Ni mogoče naložiti PDF dokumenta');
@@ -737,11 +731,9 @@
 
             closePdfViewer() {
                 const viewerModal = document.getElementById('pdf-viewer-modal');
-                this.setPdfPopoutEnabled(false);
                 viewerModal.classList.remove('open');
                 this.pdfCloseTimeout = setTimeout(() => {
                     viewerModal.classList.add('hidden');
-                    document.body.classList.remove('pdf-viewer-active');
                     this.pdfCloseTimeout = null;
                 }, 350);
                 this.pdfDoc = null;
@@ -784,7 +776,6 @@
                     console.warn('Ni mogoče fokusirati novega okna:', error);
                 }
                 this.closePdfViewer();
-                this.setPdfPopoutEnabled(false);
                 this.showToast('info', 'Predogled', 'PDF je odprt v novem oknu');
             },
 
