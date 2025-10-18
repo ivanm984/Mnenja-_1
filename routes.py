@@ -454,19 +454,50 @@ async def confirm_report(payload: ConfirmReportPayload, background_tasks: Backgr
 
     results_updated = False
     if payload.updated_results_map:
-        existing_map = cache.get("results_map") or {}
-        merged_map: Dict[str, Dict[str, Any]] = {}
-        if isinstance(existing_map, dict):
-            for key, value in existing_map.items():
-                if isinstance(value, dict):
-                    merged_map[str(key)] = value.copy()
-        for key, value in payload.updated_results_map.items():
+        existing_map_raw = cache.get("results_map") or {}
+        existing_map = existing_map_raw if isinstance(existing_map_raw, dict) else {}
+
+        merged_map: Dict[Any, Dict[str, Any]] = {}
+        existing_key_lookup: Dict[str, Any] = {}
+        preferred_type: Optional[type] = None
+
+        for existing_key, existing_value in existing_map.items():
+            merged_map[existing_key] = existing_value.copy() if isinstance(existing_value, dict) else existing_value
+            existing_key_lookup[str(existing_key)] = existing_key
+
+        if existing_key_lookup:
+            preferred_type = type(next(iter(existing_key_lookup.values())))
+
+        for raw_key, value in payload.updated_results_map.items():
             if not isinstance(value, dict):
                 continue
-            key_str = str(key)
-            base = merged_map.get(key_str, {})
-            merged_map[key_str] = {**base, **value}
+
+            target_key: Any = existing_key_lookup.get(str(raw_key), raw_key)
+
+            if target_key is raw_key and preferred_type and not isinstance(raw_key, preferred_type):
+                try:
+                    coerced_key = preferred_type(raw_key)
+                    if str(coerced_key) == str(raw_key):
+                        target_key = coerced_key
+                except (TypeError, ValueError):
+                    pass
+
+            if (
+                target_key is raw_key
+                and isinstance(raw_key, str)
+                and raw_key.isdigit()
+                and preferred_type is int
+            ):
+                try:
+                    target_key = int(raw_key)
+                except ValueError:
+                    pass
+
+            base_value = merged_map.get(target_key, {})
+            merged_map[target_key] = {**base_value, **value} if isinstance(base_value, dict) else value.copy()
+            existing_key_lookup[str(target_key)] = target_key
             results_updated = True
+
         if results_updated:
             cache["results_map"] = merged_map
 
