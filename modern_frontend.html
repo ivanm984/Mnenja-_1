@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Analiza Skladnosti s PIA</title>
+    
+    <!-- PDF.js knjižnica -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    </script>
+    
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         
@@ -77,6 +84,7 @@
         .btn-secondary { background: var(--bg-glass); border: 1px solid var(--border); color: var(--text); backdrop-filter: blur(10px); }
         .btn-secondary:hover:not(:disabled) { border-color: var(--primary-light); background: rgba(99, 102, 241, 0.1); }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-small { padding: 0.5rem 1rem; font-size: 0.85rem; }
         
         .progress-steps { backdrop-filter: blur(20px); background: var(--bg-glass); border: 1px solid var(--border); border-radius: 24px; padding: 2rem; margin-bottom: 2rem; box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1); animation: fadeIn 0.8s ease-out 0.2s both; }
         .steps-container { display: flex; justify-content: space-between; position: relative; gap: 1rem; }
@@ -103,10 +111,13 @@
         .file-list { margin-top: 2rem; display: grid; gap: 1rem; }
         .file-item { backdrop-filter: blur(10px); background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; transition: all 0.3s ease; animation: slideIn 0.4s ease-out; }
         .file-item:hover { border-color: var(--primary-light); transform: translateX(5px); }
-        .file-info { display: flex; align-items: center; gap: 1rem; }
-        .file-meta { display: flex; flex-direction: column; gap: 0.25rem; }
+        .file-info { display: flex; align-items: center; gap: 1rem; flex: 1; }
+        .file-meta { display: flex; flex-direction: column; gap: 0.25rem; flex: 1; }
+        .file-actions { display: flex; gap: 0.5rem; align-items: center; }
         .remove-file { background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.3); color: var(--danger); padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; transition: all 0.3s ease; }
         .remove-file:hover { background: var(--danger); color: white; }
+        .preview-file { background: rgba(99, 102, 241, 0.2); border: 1px solid rgba(99, 102, 241, 0.3); color: var(--primary); padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; transition: all 0.3s ease; font-weight: 600; }
+        .preview-file:hover { background: var(--primary); color: white; }
         
         .form-group { margin-bottom: 1.5rem; }
         .form-label { display: block; margin-bottom: 0.5rem; font-weight: 600; color: var(--text); font-size: 0.95rem; }
@@ -138,10 +149,14 @@
         .spinner { width: 60px; height: 60px; border: 4px solid rgba(99, 102, 241, 0.2); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1.5rem; }
         
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
-        .stat-card { padding: 1.5rem; border-radius: 16px; border: 1px solid; }
+        .stat-card { padding: 1.5rem; border-radius: 16px; border: 1px solid; cursor: pointer; transition: all 0.3s ease; }
+        .stat-card:hover { transform: translateY(-5px); box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15); }
         .stat-card.success { background: rgba(16, 185, 129, 0.1); border-color: var(--success); }
+        .stat-card.success:hover { background: rgba(16, 185, 129, 0.15); box-shadow: 0 10px 25px rgba(16, 185, 129, 0.2); }
         .stat-card.danger { background: rgba(239, 68, 68, 0.1); border-color: var(--danger); }
+        .stat-card.danger:hover { background: rgba(239, 68, 68, 0.15); box-shadow: 0 10px 25px rgba(239, 68, 68, 0.2); }
         .stat-card.info { background: rgba(59, 130, 246, 0.1); border-color: var(--info); }
+        .stat-card.info:hover { background: rgba(59, 130, 246, 0.15); box-shadow: 0 10px 25px rgba(59, 130, 246, 0.2); }
         .stat-value { font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem; }
         
         .results-table { width: 100%; margin-top: 2rem; border-collapse: separate; border-spacing: 0 0.5rem; }
@@ -191,19 +206,8 @@
         .session-date { font-size: 0.85rem; color: var(--text-muted); }
         .session-summary { color: var(--text-muted); font-size: 0.95rem; margin-top: 0.5rem; }
         .session-actions { display: flex; gap: 0.5rem; margin-top: 1rem; }
-        .btn-small { padding: 0.5rem 1rem; font-size: 0.85rem; }
         .empty-state { text-align: center; padding: 3rem; color: var(--text-muted); }
         .empty-state-icon { font-size: 4rem; margin-bottom: 1rem; opacity: 0.5; }
-        
-        /* Stat cards - klikljive */
-        .stat-card { padding: 1.5rem; border-radius: 16px; border: 1px solid; cursor: pointer; transition: all 0.3s ease; }
-        .stat-card:hover { transform: translateY(-5px); box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15); }
-        .stat-card.success { background: rgba(16, 185, 129, 0.1); border-color: var(--success); }
-        .stat-card.success:hover { background: rgba(16, 185, 129, 0.15); box-shadow: 0 10px 25px rgba(16, 185, 129, 0.2); }
-        .stat-card.danger { background: rgba(239, 68, 68, 0.1); border-color: var(--danger); }
-        .stat-card.danger:hover { background: rgba(239, 68, 68, 0.15); box-shadow: 0 10px 25px rgba(239, 68, 68, 0.2); }
-        .stat-card.info { background: rgba(59, 130, 246, 0.1); border-color: var(--info); }
-        .stat-card.info:hover { background: rgba(59, 130, 246, 0.15); box-shadow: 0 10px 25px rgba(59, 130, 246, 0.2); }
         
         /* Filter modal */
         .filter-modal-content { max-width: 1000px; }
@@ -219,10 +223,19 @@
         .filter-item-title { font-weight: 600; color: var(--text); margin-bottom: 0.5rem; line-height: 1.5; }
         .filter-item-explanation { color: var(--text-muted); font-size: 0.9rem; line-height: 1.6; }
         
-        /* Save button v header */
-        .save-indicator { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border-radius: 8px; background: var(--bg-glass); border: 1px solid var(--border); font-size: 0.85rem; color: var(--text-muted); }
-        .save-indicator.saving { color: var(--warning); }
-        .save-indicator.saved { color: var(--success); }
+        /* PDF Viewer Modal */
+        .pdf-viewer-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.95); z-index: 3000; display: flex; flex-direction: column; }
+        .pdf-viewer-header { background: var(--bg-card); padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); }
+        .pdf-viewer-title { font-size: 1.1rem; font-weight: 600; color: var(--text); max-width: 50%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .pdf-viewer-controls { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+        .pdf-zoom-controls { display: flex; gap: 0.5rem; align-items: center; }
+        .pdf-zoom-value { font-size: 0.9rem; color: var(--text-muted); min-width: 60px; text-align: center; }
+        .pdf-page-nav { display: flex; gap: 0.5rem; align-items: center; }
+        .pdf-page-info { font-size: 0.9rem; color: var(--text-muted); min-width: 120px; text-align: center; }
+        .pdf-viewer-body { flex: 1; overflow: auto; display: flex; justify-content: center; align-items: flex-start; padding: 2rem; background: #1a1a1a; }
+        .pdf-canvas-container { background: white; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5); max-width: 100%; }
+        #pdfCanvas { display: block; max-width: 100%; height: auto; }
+        .pdf-loading { color: white; font-size: 1.1rem; text-align: center; }
         
         @media (max-width: 768px) {
             .app-container { padding: 1rem; }
@@ -231,6 +244,8 @@
             .steps-container::before { display: none; }
             .key-data-grid { grid-template-columns: 1fr; }
             .modal-content { width: 95%; padding: 1.5rem; }
+            .pdf-viewer-controls { flex-direction: column; align-items: stretch; gap: 0.5rem; }
+            .pdf-viewer-title { max-width: 100%; }
         }
     </style>
 </head>
@@ -392,6 +407,32 @@
                 <div class="filter-list" id="filter-list"></div>
             </div>
         </div>
+        
+        <!-- PDF Viewer Modal -->
+        <div id="pdf-viewer-modal" class="pdf-viewer-modal hidden">
+            <div class="pdf-viewer-header">
+                <div class="pdf-viewer-title" id="pdf-viewer-title">PDF Predogled</div>
+                <div class="pdf-viewer-controls">
+                    <div class="pdf-zoom-controls">
+                        <button class="btn btn-secondary btn-small" onclick="app.pdfZoomOut()" id="pdf-zoom-out">−</button>
+                        <span class="pdf-zoom-value" id="pdf-zoom-value">100%</span>
+                        <button class="btn btn-secondary btn-small" onclick="app.pdfZoomIn()" id="pdf-zoom-in">+</button>
+                    </div>
+                    <div class="pdf-page-nav" id="pdf-page-nav" style="display: none;">
+                        <button class="btn btn-secondary btn-small" onclick="app.pdfPrevPage()" id="pdf-prev-page">← Prejšnja</button>
+                        <span class="pdf-page-info" id="pdf-page-info">Stran 1 / 1</span>
+                        <button class="btn btn-secondary btn-small" onclick="app.pdfNextPage()" id="pdf-next-page">Naslednja →</button>
+                    </div>
+                    <button class="btn btn-primary btn-small" onclick="app.closePdfViewer()">Zapri</button>
+                </div>
+            </div>
+            <div class="pdf-viewer-body" id="pdf-viewer-body">
+                <div class="pdf-loading" id="pdf-loading">Nalagam PDF dokument...</div>
+                <div class="pdf-canvas-container" id="pdf-canvas-container" style="display: none;">
+                    <canvas id="pdfCanvas"></canvas>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -431,9 +472,16 @@
             expandedRows: new Set(),
             hasUnsavedChanges: false,
             saveTimeout: null,
+            
+            // PDF Viewer state
+            pdfDoc: null,
+            pdfCurrentPage: 1,
+            pdfTotalPages: 0,
+            pdfZoom: 1.5,
+            pdfLoading: false,
+            currentPdfFile: null,
 
             init() {
-                // Load theme from localStorage
                 const savedTheme = localStorage.getItem('theme') || 'dark';
                 document.body.className = `${savedTheme}-mode`;
                 document.getElementById('theme-icon').textContent = savedTheme === 'dark' ? '🌙' : '☀️';
@@ -458,13 +506,9 @@
             },
 
             goToStep(step) {
-                // Ne dovoli klika na korak 3 (analiza je samo loading state)
                 if (step === 3) return;
-                
-                // Preveri ali je korak dosegljiv
                 const stepEl = document.getElementById(`step-${step}`);
                 if (stepEl.classList.contains('disabled')) return;
-                
                 this.currentStep = step;
                 this.updateUI();
             },
@@ -485,7 +529,6 @@
             },
 
             updateStepAccess() {
-                // Step 2 je dostopen samo če imamo sessionId
                 const step2 = document.getElementById('step-2');
                 if (this.sessionId) {
                     step2.classList.remove('disabled');
@@ -493,7 +536,6 @@
                     step2.classList.add('disabled');
                 }
                 
-                // Step 4 je dostopen samo če imamo rezultate
                 const step4 = document.getElementById('step-4');
                 if (this.results.length > 0) {
                     step4.classList.remove('disabled');
@@ -557,7 +599,10 @@
                                 ${file.type === 'application/pdf' ? `<input type="text" placeholder="Strani (npr. 1-3, 5)" style="margin-top: 0.25rem; padding: 0.25rem 0.5rem; border-radius: 6px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text); font-size: 0.85rem;" onchange="app.updatePages('${file.name}', this.value)">` : ''}
                             </div>
                         </div>
-                        <button class="remove-file" onclick="app.removeFile(${index})">✕</button>
+                        <div class="file-actions">
+                            ${file.type === 'application/pdf' ? `<button class="preview-file" onclick="app.openPdfViewer(${index})">👁️ Predogled</button>` : ''}
+                            <button class="remove-file" onclick="app.removeFile(${index})">✕</button>
+                        </div>
                     </div>
                 `).join('');
             },
@@ -569,14 +614,130 @@
                 return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
             },
 
+            // PDF Viewer Methods
+            async openPdfViewer(fileIndex) {
+                const fileItem = this.files[fileIndex];
+                if (!fileItem) return;
+                
+                // fileItem ima strukturo: { id: ..., file: File }
+                const file = fileItem.file;
+                if (!file || file.type !== 'application/pdf') return;
+                
+                this.currentPdfFile = file;
+                this.pdfCurrentPage = 1;
+                this.pdfZoom = 1.5;
+                this.pdfLoading = true;
+                
+                document.getElementById('pdf-viewer-modal').classList.remove('hidden');
+                document.getElementById('pdf-viewer-title').textContent = file.name;
+                document.getElementById('pdf-loading').style.display = 'block';
+                document.getElementById('pdf-canvas-container').style.display = 'none';
+                
+                try {
+                    const arrayBuffer = await file.arrayBuffer();
+                    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                    this.pdfDoc = pdf;
+                    this.pdfTotalPages = pdf.numPages;
+                    
+                    if (this.pdfTotalPages > 1) {
+                        document.getElementById('pdf-page-nav').style.display = 'flex';
+                    } else {
+                        document.getElementById('pdf-page-nav').style.display = 'none';
+                    }
+                    
+                    await this.renderPdfPage(1);
+                    this.pdfLoading = false;
+                    document.getElementById('pdf-loading').style.display = 'none';
+                    document.getElementById('pdf-canvas-container').style.display = 'block';
+                } catch (error) {
+                    console.error('Napaka pri nalaganju PDF:', error);
+                    this.showToast('error', 'Napaka', 'Ni mogoče naložiti PDF dokumenta');
+                    this.closePdfViewer();
+                }
+            },
+
+            async renderPdfPage(pageNum) {
+                if (!this.pdfDoc || pageNum < 1 || pageNum > this.pdfTotalPages) return;
+                
+                this.pdfLoading = true;
+                document.getElementById('pdf-zoom-out').disabled = true;
+                document.getElementById('pdf-zoom-in').disabled = true;
+                document.getElementById('pdf-prev-page').disabled = true;
+                document.getElementById('pdf-next-page').disabled = true;
+                
+                try {
+                    const page = await this.pdfDoc.getPage(pageNum);
+                    const canvas = document.getElementById('pdfCanvas');
+                    const context = canvas.getContext('2d');
+                    
+                    const viewport = page.getViewport({ scale: this.pdfZoom });
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    
+                    await page.render({
+                        canvasContext: context,
+                        viewport: viewport
+                    }).promise;
+                    
+                    this.pdfCurrentPage = pageNum;
+                    document.getElementById('pdf-page-info').textContent = `Stran ${this.pdfCurrentPage} / ${this.pdfTotalPages}`;
+                    document.getElementById('pdf-zoom-value').textContent = `${Math.round(this.pdfZoom * 100)}%`;
+                    
+                    this.pdfLoading = false;
+                    document.getElementById('pdf-zoom-out').disabled = this.pdfZoom <= 0.5;
+                    document.getElementById('pdf-zoom-in').disabled = this.pdfZoom >= 3;
+                    document.getElementById('pdf-prev-page').disabled = this.pdfCurrentPage <= 1;
+                    document.getElementById('pdf-next-page').disabled = this.pdfCurrentPage >= this.pdfTotalPages;
+                } catch (error) {
+                    console.error('Napaka pri prikazu strani:', error);
+                    this.showToast('error', 'Napaka', 'Ni mogoče prikazati strani');
+                    this.pdfLoading = false;
+                }
+            },
+
+            closePdfViewer() {
+                document.getElementById('pdf-viewer-modal').classList.add('hidden');
+                this.pdfDoc = null;
+                this.pdfCurrentPage = 1;
+                this.pdfTotalPages = 0;
+                this.pdfZoom = 1.5;
+                this.currentPdfFile = null;
+            },
+
+            pdfPrevPage() {
+                if (this.pdfCurrentPage > 1 && !this.pdfLoading) {
+                    this.renderPdfPage(this.pdfCurrentPage - 1);
+                }
+            },
+
+            pdfNextPage() {
+                if (this.pdfCurrentPage < this.pdfTotalPages && !this.pdfLoading) {
+                    this.renderPdfPage(this.pdfCurrentPage + 1);
+                }
+            },
+
+            pdfZoomIn() {
+                if (this.pdfZoom < 3 && !this.pdfLoading) {
+                    this.pdfZoom += 0.25;
+                    this.renderPdfPage(this.pdfCurrentPage);
+                }
+            },
+
+            pdfZoomOut() {
+                if (this.pdfZoom > 0.5 && !this.pdfLoading) {
+                    this.pdfZoom -= 0.25;
+                    this.renderPdfPage(this.pdfCurrentPage);
+                }
+            },
+
             async extractData() {
                 if (this.files.length === 0) return;
                 this.showLoading('Ekstrahiram podatke iz dokumentov...');
                 
                 try {
                     const formData = new FormData();
-                    this.files.forEach(file => formData.append('pdf_files', file));
-                    formData.append('municipality_slug', 'litija'); // Fiksno na Litija
+                    this.files.forEach(f => formData.append('pdf_files', f.file));
+                    formData.append('municipality_slug', 'litija');
                     formData.append('files_meta_json', JSON.stringify(Object.values(this.filesMeta)));
                     
                     const response = await fetch('/extract-data', { method: 'POST', body: formData });
@@ -587,7 +748,6 @@
                     this.eupRabaPairs = (data.eup || []).map((eup, i) => ({ eup, raba: (data.namenska_raba || [])[i] || '' }));
                     if (this.eupRabaPairs.length === 0) this.eupRabaPairs = [{ eup: '', raba: '' }];
                     
-                    // Shrani vse key data
                     this.keyData = {};
                     Object.keys(KEY_DATA_LABELS).forEach(key => {
                         this.keyData[key] = data[key] || 'Ni podatka v dokumentaciji';
@@ -627,7 +787,6 @@
                 let isValid = true;
                 const validationError = document.getElementById('validation-error');
                 
-                // Preveri ali ima vsak par izpolnjena oba polja
                 this.eupRabaPairs.forEach((pair, index) => {
                     const eupInput = document.getElementById(`eup-input-${index}`);
                     const rabaInput = document.getElementById(`raba-input-${index}`);
@@ -647,10 +806,8 @@
                     }
                 });
                 
-                // Prikaži/skrij error sporočilo
                 if (!isValid) {
                     validationError.style.display = 'flex';
-                    // Scroll na error
                     validationError.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 } else {
                     validationError.style.display = 'none';
@@ -661,7 +818,6 @@
 
             clearValidationError() {
                 document.getElementById('validation-error').style.display = 'none';
-                // Odstrani error class iz vseh inputov
                 this.eupRabaPairs.forEach((pair, index) => {
                     const eupInput = document.getElementById(`eup-input-${index}`);
                     const rabaInput = document.getElementById(`raba-input-${index}`);
@@ -679,7 +835,6 @@
                     </div>
                 `).join('');
                 
-                // Po renderingu prilagodi vse textareas
                 setTimeout(() => {
                     Object.keys(KEY_DATA_LABELS).forEach((_, index) => {
                         const textarea = document.getElementById(`keydata-textarea-${index}`);
@@ -692,7 +847,6 @@
             removeEupRabaPair(index) { this.eupRabaPairs.splice(index, 1); this.renderEupRabaPairs(); },
 
             async confirmAndAnalyze() {
-                // Preveri validacijo
                 if (!this.validateEupRaba()) {
                     this.showToast('error', 'Manjkajoči podatki', 'Prosimo izpolnite EUP in Namensko rabo');
                     return;
@@ -721,7 +875,6 @@
                     if (!response.ok) throw new Error('Napaka pri analizi');
                     const data = await response.json();
                     
-                    // Pretvori rezultate
                     const resultsMap = data.results_map || {};
                     this.results = (data.zahteve || []).map(req => {
                         const result = resultsMap[req.id] || {};
@@ -791,7 +944,6 @@
                     </tr>
                 `}).join('');
                 
-                // Po renderingu prilagodi vse textareas
                 setTimeout(() => {
                     this.results.forEach((_, index) => {
                         const textarea = document.getElementById(`textarea-${index}`);
@@ -833,7 +985,6 @@
                 this.hasUnsavedChanges = true;
                 this.showSaveButton();
                 
-                // Auto-save po 3 sekundah neaktivnosti
                 if (this.saveTimeout) clearTimeout(this.saveTimeout);
                 this.saveTimeout = setTimeout(() => {
                     this.autoSaveProgress();
@@ -856,7 +1007,6 @@
                 this.showLoading('Shranjujem spremembe...');
                 
                 try {
-                    // Pripravi podatke za backend
                     const sessionData = {
                         results_map: {},
                         zahteve: this.results.map(r => ({
@@ -869,7 +1019,6 @@
                         namenska_raba: this.eupRabaPairs.map(p => p.raba)
                     };
                     
-                    // Pretvori results v results_map format
                     this.results.forEach(r => {
                         sessionData.results_map[r.id] = {
                             skladnost: r.skladnost,
@@ -931,7 +1080,6 @@
                     return;
                 }
                 
-                // Najprej shrani vse spremembe
                 if (this.hasUnsavedChanges) {
                     await this.saveProgress();
                 }
@@ -953,7 +1101,6 @@
                     if (!response.ok) throw new Error('Napaka pri generiranju poročila');
                     const data = await response.json();
                     
-                    // Prenos DOCX poročila
                     if (data.docx_path) {
                         const docxResponse = await fetch(`/${data.docx_path}`);
                         const blob = await docxResponse.blob();
@@ -967,7 +1114,6 @@
                         window.URL.revokeObjectURL(url);
                     }
                     
-                    // Prenos XLSX priloge
                     if (data.xlsx_path) {
                         setTimeout(async () => {
                             const xlsxResponse = await fetch(`/${data.xlsx_path}`);
@@ -1023,13 +1169,11 @@
                     badgeText = `${filteredResults.length} Ni Relevantno`;
                 }
                 
-                // Posodobi modal
                 document.getElementById('filter-modal-title').textContent = title;
                 const badge = document.getElementById('filter-badge');
                 badge.className = `filter-badge ${badgeClass}`;
                 badge.textContent = badgeText;
                 
-                // Renderuj filtriran seznam
                 const filterList = document.getElementById('filter-list');
                 if (filteredResults.length === 0) {
                     filterList.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div><p>Ni zahtev v tej kategoriji</p></div>';
@@ -1046,7 +1190,6 @@
                     `).join('');
                 }
                 
-                // Prikaži modal
                 document.getElementById('filter-modal').classList.add('show');
             },
 
@@ -1095,21 +1238,17 @@
                     if (!response.ok) throw new Error('Seja ne obstaja');
                     const data = await response.json();
                     
-                    // Naloži podatke
                     this.sessionId = sessionId;
                     const sessionData = typeof data.data === 'string' ? JSON.parse(data.data) : data.data;
                     
-                    // Naloži EUP/Raba
                     this.eupRabaPairs = (sessionData.eup || []).map((eup, i) => ({
                         eup,
                         raba: (sessionData.namenska_raba || [])[i] || ''
                     }));
                     if (this.eupRabaPairs.length === 0) this.eupRabaPairs = [{ eup: '', raba: '' }];
                     
-                    // Naloži key data
                     this.keyData = sessionData.key_data || {};
                     
-                    // Naloži rezultate
                     const resultsMap = sessionData.results_map || {};
                     this.results = (sessionData.zahteve || []).map(req => {
                         const result = resultsMap[req.id] || {};
@@ -1126,13 +1265,11 @@
                         };
                     });
                     
-                    // Posodobi UI
                     this.renderEupRabaPairs();
                     this.renderKeyData();
                     this.renderResults();
                     this.updateStepAccess();
                     
-                    // Pojdi na korak 4 (rezultati)
                     this.currentStep = 4;
                     this.updateUI();
                     
@@ -1170,22 +1307,6 @@
                 });
             },
 
-            async showSessions() {
-                try {
-                    const response = await fetch('/saved-sessions');
-                    if (!response.ok) throw new Error('Napaka pri nalaganju sej');
-                    const data = await response.json();
-                    
-                    if (data.sessions && data.sessions.length > 0) {
-                        this.showToast('info', 'Shranjene seje', `Najdenih ${data.sessions.length} sej`);
-                    } else {
-                        this.showToast('info', 'Ni shranjenih sej', 'Trenutno ni shranjenih analiz');
-                    }
-                } catch (error) {
-                    this.showToast('error', 'Napaka', error.message);
-                }
-            },
-
             showLoading(message) {
                 document.getElementById('loading-message').textContent = message;
                 document.getElementById('loading-overlay').classList.remove('hidden');
@@ -1205,7 +1326,6 @@
             }
         };
 
-        // Initialize app
         document.addEventListener('DOMContentLoaded', () => {
             app.init();
         });
