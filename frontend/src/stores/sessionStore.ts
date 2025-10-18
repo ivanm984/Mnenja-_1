@@ -779,7 +779,8 @@ export const useSessionStore = defineStore('session', () => {
       selected_ids: extra.selectedIds ?? [],
       existing_results_map: resultsMap.value ?? {}
     };
-
+    downloadReady.value = false;
+    downloadHref.value = '';
     startLoading(extra.isRerun ? 'Ponovno preverjam izbrane zahteve...' : 'Izvajam podrobno analizo...');
     try {
       const response = await fetch('/analyze-report', {
