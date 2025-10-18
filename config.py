@@ -31,6 +31,10 @@ GEN_CFG = {
     "response_mime_type": "application/json",
 }
 
+GEMINI_ANALYSIS_CONCURRENCY = max(
+    1, int(os.environ.get("GEMINI_ANALYSIS_CONCURRENCY", 3))
+)
+
 DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("❌ DATABASE_URL manjka v .env datoteki!")
@@ -49,6 +53,7 @@ __all__ = [
     "FAST_MODEL_NAME",
     "POWERFUL_MODEL_NAME",
     "GEN_CFG",
+    "GEMINI_ANALYSIS_CONCURRENCY",
     "DATABASE_URL",
     "DEFAULT_MUNICIPALITY_SLUG",
     "DEFAULT_MUNICIPALITY_NAME",

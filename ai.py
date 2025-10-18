@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from typing import Any, Dict, List
@@ -13,9 +14,22 @@ from PIL import Image
 import google.generativeai as genai
 
 # SPREMEMBA: Uvozimo oba modela iz konfiguracije
-from .config import API_KEY, FAST_MODEL_NAME, GEN_CFG, POWERFUL_MODEL_NAME
+from .config import (
+    API_KEY,
+    FAST_MODEL_NAME,
+    GEMINI_ANALYSIS_CONCURRENCY,
+    GEN_CFG,
+    POWERFUL_MODEL_NAME,
+)
 
 genai.configure(api_key=API_KEY)
+
+_FAST_JSON_CONFIG = {"response_mime_type": "application/json"}
+_FAST_JSON_MODEL = genai.GenerativeModel(
+    FAST_MODEL_NAME, generation_config=_FAST_JSON_CONFIG
+)
+_POWERFUL_MODEL = genai.GenerativeModel(POWERFUL_MODEL_NAME, generation_config=GEN_CFG)
+_ANALYSIS_SEMAPHORE = asyncio.Semaphore(max(1, GEMINI_ANALYSIS_CONCURRENCY))
 
 
 async def call_gemini_for_details_async(project_text: str, images: List[Image.Image]) -> Dict[str, List[str]]:
@@ -31,10 +45,8 @@ async def call_gemini_for_details_async(project_text: str, images: List[Image.Im
     Besedilo dokumentacije: --- {project_text[:40000]} ---
     """
     try:
-        # SPREMEMBA: Uporablja se hiter model za ekstrakcijo
-        model = genai.GenerativeModel(FAST_MODEL_NAME, generation_config={"response_mime_type": "application/json"})
         content_parts = [prompt, *images]
-        response = await model.generate_content_async(content_parts)
+        response = await _FAST_JSON_MODEL.generate_content_async(content_parts)
         details = json.loads(response.text)
         eup_list = [str(e) for e in details.get("eup", []) if e]
         raba_list = [str(r).upper() for r in details.get("namenska_raba", []) if r]
@@ -64,9 +76,7 @@ async def call_gemini_for_metadata_async(project_text: str) -> Dict[str, str]:
     Besedilo dokumentacije: --- {project_text[:20000]} ---
     """
     try:
-        # SPREMEMBA: Uporablja se hiter model za ekstrakcijo
-        model = genai.GenerativeModel(FAST_MODEL_NAME, generation_config={"response_mime_type": "application/json"})
-        response = await model.generate_content_async(prompt)
+        response = await _FAST_JSON_MODEL.generate_content_async(prompt)
         data = json.loads(response.text)
         return {
             "investitor": data.get("investitor", "Ni podatka"),
@@ -124,10 +134,8 @@ async def call_gemini_for_key_data_async(project_text: str, images: List[Image.I
     Besedilo dokumentacije: --- {project_text[:40000]} ---
     """
     try:
-        # SPREMEMBA: Uporablja se hiter model za ekstrakcijo
-        model = genai.GenerativeModel(FAST_MODEL_NAME, generation_config={"response_mime_type": "application/json"})
         content_parts = [prompt, *images]
-        response = await model.generate_content_async(content_parts)
+        response = await _FAST_JSON_MODEL.generate_content_async(content_parts)
         key_data = json.loads(response.text)
         return {key: key_data.get(key, "Ni podatka v dokumentaciji") for key in KEY_DATA_PROMPT_MAP.keys()}
     except Exception as exc:
@@ -138,10 +146,9 @@ async def call_gemini_for_key_data_async(project_text: str, images: List[Image.I
 async def call_gemini_async(prompt: str, images: List[Image.Image]) -> str:
     """Izvede glavno, kompleksno analizo skladnosti z zmogljivim modelom."""
     try:
-        # SPREMEMBA: Ta funkcija uporablja zmogljiv model za analizo
-        model = genai.GenerativeModel(POWERFUL_MODEL_NAME, generation_config=GEN_CFG)
         content_parts = [prompt, *images]
-        response = await model.generate_content_async(content_parts)
+        async with _ANALYSIS_SEMAPHORE:
+            response = await _POWERFUL_MODEL.generate_content_async(content_parts)
         if not response.parts:
             reason = response.candidates[0].finish_reason if response.candidates else "NEZNAN"
             raise RuntimeError(f"Gemini ni vrnil veljavnega odgovora. Razlog: {reason}")
