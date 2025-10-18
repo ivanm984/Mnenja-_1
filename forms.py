@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List
 try:  # pragma: no cover - optional dependency import guard
     from openpyxl import load_workbook
     from openpyxl.utils.cell import coordinate_to_tuple
+    from openpyxl.styles import Alignment
 except ImportError as exc:  # pragma: no cover - import guard
     raise RuntimeError(
         "Knjižnica 'openpyxl' ni nameščena. Namestite jo z `pip install openpyxl`."
@@ -126,9 +127,33 @@ def _format_source_files(source_files: Iterable[Dict[str, Any]]) -> str:
     return "\n".join(files) if files else "Ni navedenih dokumentov."
 
 
+def _apply_wrap_text(cell) -> None:
+    try:
+        current = cell.alignment
+    except AttributeError:
+        current = None
+
+    if current:
+        cell.alignment = Alignment(
+            horizontal=current.horizontal,
+            vertical=current.vertical,
+            text_rotation=current.text_rotation,
+            wrap_text=True,
+            shrink_to_fit=current.shrink_to_fit,
+            indent=current.indent,
+            relative_indent=getattr(current, "relative_indent", 0),
+            justify_last_line=getattr(current, "justify_last_line", False),
+            reading_order=getattr(current, "reading_order", 0),
+        )
+    else:
+        cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+
 def _set_cell_value(worksheet, cell: str, value: Any) -> None:
     try:
-        worksheet[cell] = value
+        target = worksheet[cell]
+        target.value = value
+        _apply_wrap_text(target)
         return
     except AttributeError as exc:
         if "MergedCell" not in str(exc):
@@ -140,9 +165,11 @@ def _set_cell_value(worksheet, cell: str, value: Any) -> None:
                 merged_range.min_row <= row <= merged_range.max_row
                 and merged_range.min_col <= column <= merged_range.max_col
             ):
-                worksheet.cell(
+                base_cell = worksheet.cell(
                     row=merged_range.min_row, column=merged_range.min_col
-                ).value = value
+                )
+                base_cell.value = value
+                _apply_wrap_text(base_cell)
                 return
 
         # If the cell is not part of a merged range re-raise the original error.

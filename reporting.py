@@ -17,6 +17,7 @@ from docx import Document
 from docx.enum.section import WD_ORIENT
 from docx.shared import Inches, RGBColor
 from openpyxl import load_workbook
+from openpyxl.styles import Alignment
 from openpyxl.worksheet.worksheet import Worksheet
 
 
@@ -182,6 +183,21 @@ def _write_value_cell_right_of_label(ws: Worksheet, label_cell, value: Any):
 
     target = _resolve_top_left_if_merged(ws, label_cell.row, 2)
     target.value = value
+    current = target.alignment
+    if current:
+        target.alignment = Alignment(
+            horizontal=current.horizontal,
+            vertical=current.vertical,
+            text_rotation=current.text_rotation,
+            wrap_text=True,
+            shrink_to_fit=current.shrink_to_fit,
+            indent=current.indent,
+            relative_indent=getattr(current, "relative_indent", 0),
+            justify_last_line=getattr(current, "justify_last_line", False),
+            reading_order=getattr(current, "reading_order", 0),
+        )
+    else:
+        target.alignment = Alignment(wrap_text=True, vertical="top")
 
 
 def _as_multiline(value: Any) -> str:
