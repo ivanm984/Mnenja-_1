@@ -462,7 +462,10 @@ async def confirm_report(payload: ConfirmReportPayload, background_tasks: Backgr
         preferred_type: Optional[type] = None
 
         for existing_key, existing_value in existing_map.items():
-            merged_map[existing_key] = existing_value.copy() if isinstance(existing_value, dict) else existing_value
+            if not isinstance(existing_value, dict):
+                continue
+
+            merged_map[existing_key] = existing_value.copy()
             existing_key_lookup[str(existing_key)] = existing_key
 
         if existing_key_lookup:
