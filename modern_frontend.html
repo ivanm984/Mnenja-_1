@@ -7,9 +7,15 @@
     
     <!-- PDF.js knjižnica -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            integrity="sha256-Vt3Qt1kI6ZKbpwQIk9O+V1YQUAECEV4VpWw2Dh0wPms=" crossorigin=""></script>
+
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     </script>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-o9N1j7k3eWs4v3vU1mE1q+ig+NUwXg2JtGItDG18QJ0=" crossorigin="" />
     
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -76,6 +82,7 @@
         @keyframes progressShimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
         
         .hidden { display: none !important; }
+        body.gurs-map-open { overflow: hidden; }
         .app-container { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 2rem; transition: margin 0.35s ease, width 0.35s ease, max-width 0.35s ease; }
         .progress-bar-container { position: fixed; top: 0; left: 0; right: 0; z-index: 4000; background: var(--bg-card); border-bottom: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); transform: translateY(-100%); transition: transform 0.3s ease; }
         .progress-bar-container.active { transform: translateY(0); }
@@ -172,6 +179,23 @@
         
         .spinner-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; z-index: 1000; }
         .spinner { width: 60px; height: 60px; border: 4px solid rgba(99, 102, 241, 0.2); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1.5rem; }
+
+        .gurs-map-overlay { position: fixed; inset: 0; z-index: 5000; display: none; align-items: center; justify-content: center; padding: 2rem; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px); }
+        .gurs-map-overlay.show { display: flex; }
+        .gurs-map-dialog { width: min(1000px, 94vw); max-width: 1100px; min-height: 520px; display: flex; flex-direction: column; background: var(--bg-card); border: 1px solid var(--border); border-radius: 24px; box-shadow: 0 35px 60px -25px rgba(15, 23, 42, 0.6); overflow: hidden; position: relative; }
+        body.dark-mode .gurs-map-dialog { background: rgba(30, 41, 59, 0.92); border-color: rgba(148, 163, 184, 0.3); }
+        .gurs-map-header { padding: 1.75rem 2rem; display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(99, 102, 241, 0) 100%); border-bottom: 1px solid var(--border); }
+        body.dark-mode .gurs-map-header { background: linear-gradient(135deg, rgba(99, 102, 241, 0.25) 0%, rgba(30, 41, 59, 0.25) 100%); }
+        .gurs-map-title { font-size: 1.35rem; font-weight: 700; color: var(--text); }
+        .gurs-map-subtitle { margin-top: 0.35rem; color: var(--text-muted); font-size: 0.95rem; }
+        .gurs-map-close { border: none; background: rgba(255, 255, 255, 0.08); border-radius: 12px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; cursor: pointer; color: var(--text); transition: all 0.25s ease; }
+        body.light-mode .gurs-map-close { background: rgba(99, 102, 241, 0.1); }
+        .gurs-map-close:hover { transform: scale(1.05); background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); color: white; }
+        .gurs-map-body { flex: 1; position: relative; }
+        #gurs-map { width: 100%; height: clamp(340px, 65vh, 640px); }
+        .gurs-map-footer { padding: 1rem 2rem; font-size: 0.85rem; color: var(--text-muted); background: var(--bg-card); border-top: 1px solid var(--border); }
+        body.dark-mode .gurs-map-footer { background: rgba(30, 41, 59, 0.9); border-color: rgba(148, 163, 184, 0.25); }
+        .gurs-map-dialog .leaflet-control-attribution { font-size: 10px !important; }
         
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
         .stat-card { padding: 1.5rem; border-radius: 16px; border: 1px solid; cursor: pointer; transition: all 0.3s ease; }
@@ -420,6 +444,24 @@
                 <div class="actions-bar">
                     <button class="btn btn-secondary" onclick="app.resetAnalysis()">🔄 Nova Analiza</button>
                     <button class="btn btn-primary" onclick="app.downloadReport()">📥 Prenesi Poročilo</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="gurs-map-overlay hidden" id="gurs-map-overlay">
+            <div class="gurs-map-dialog" role="dialog" aria-modal="true">
+                <div class="gurs-map-header">
+                    <div>
+                        <div class="gurs-map-title" id="gurs-map-title">Parcela</div>
+                        <div class="gurs-map-subtitle" id="gurs-map-subtitle">k.o. —</div>
+                    </div>
+                    <button class="gurs-map-close" onclick="app.closeGursMap()" aria-label="Zapri GURS zemljevid">✕</button>
+                </div>
+                <div class="gurs-map-body">
+                    <div id="gurs-map"></div>
+                </div>
+                <div class="gurs-map-footer">
+                    Podatki: © GURS – Javne storitve (WMS/WFS). Ortofoto in parcelne meje so informativne narave.
                 </div>
             </div>
         </div>
