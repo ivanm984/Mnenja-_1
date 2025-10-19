@@ -3,6 +3,10 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from functools import lru_cache
+from importlib import resources
+from pathlib import Path
+from typing import Iterable
 
 from .config import PROJECT_ROOT
 from .municipalities import (
@@ -19,7 +23,7 @@ FRONTEND_PATH = PROJECT_ROOT / "modern_frontend.html"
 
 
 def build_homepage() -> str:
-    html = FRONTEND_PATH.read_text(encoding="utf-8")
+    html = _load_template()
     html = html.replace("YEAR_PLACEHOLDER", str(datetime.now().year))
     html = html.replace(
         "DEFAULT_MUNICIPALITY_SLUG_PLACEHOLDER",
