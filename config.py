@@ -9,7 +9,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# V začetni različici je bila kot koren projekta uporabljena mapa nad paketom,
+# kar v praksi pomeni, da je aplikacija poskušala dostopati do poti kot je
+# `/workspace/app/frontend.html`. Ker se statični viri (npr. modern_frontend.html)
+# nahajajo neposredno znotraj samega paketa, moramo za koren uporabiti mapo, v
+# kateri je ta modul. S tem poskrbimo, da aplikacija zanesljivo najde HTML
+# predlogo tudi v lokalnih okoljih.
+PROJECT_ROOT = Path(__file__).resolve().parent
 DATA_DIR = PROJECT_ROOT / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
