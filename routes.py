@@ -11,6 +11,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
+import httpx
+
 from fastapi import (APIRouter, BackgroundTasks, File, Form, HTTPException,
                    UploadFile)
 from fastapi.responses import FileResponse, HTMLResponse
@@ -43,6 +45,155 @@ router = APIRouter()
 
 ANALYSIS_CHUNK_SIZE = 15
 
+GURS_WFS_URL = "https://prostor.gov.si/ows/PK_GURS_DPB/ows"
+GURS_WFS_LAYER = "PK_GURS_DPB:Parcele"
+GURS_PARCEL_FIELDS = ["STEVILKA", "PARCELNA_ST", "ST_PARCEL", "STEVILKA_P", "ST"]
+GURS_KO_FIELDS = ["KO_IME", "K_O_IME", "KOIME", "KO_NAZIV"]
+
+
+def _sanitize_parcel_number(value: str) -> str:
+    cleaned = (value or "").strip()
+    cleaned = cleaned.replace(" ", "")
+    return cleaned
+
+
+def _normalise_ko(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    text = re.sub(r"\s+", " ", value).strip()
+    return text or None
+
+
+def _build_cql_filters(parcel_number: str, ko_name: Optional[str]) -> List[str]:
+    candidates = []
+    safe_parcel = parcel_number.replace("'", "''")
+    parcel_variants = {safe_parcel}
+    if "/" in safe_parcel:
+        parcel_variants.add(safe_parcel.replace("/", "-"))
+        parcel_variants.add(safe_parcel.replace("/", ""))
+    for variant in list(parcel_variants):
+        if variant.startswith("0") and len(variant) > 1:
+            parcel_variants.add(variant.lstrip("0"))
+
+    ko_variants = []
+    if ko_name:
+        sanitized = ko_name.replace("'", "''")
+        ko_variants.append(sanitized)
+        ko_variants.append(sanitized.upper())
+
+    cql_filters: List[str] = []
+    for parcel_candidate in parcel_variants:
+        for parcel_field in GURS_PARCEL_FIELDS:
+            base_clause = f"{parcel_field}='{parcel_candidate}'"
+            cql_filters.append(base_clause)
+            if ko_variants:
+                for ko_candidate in ko_variants:
+                    for ko_field in GURS_KO_FIELDS:
+                        cql_filters.append(
+                            f"{base_clause} AND {ko_field} ILIKE '{ko_candidate}%'"
+                        )
+                cql_filters.append(
+                    f"{base_clause} AND UPPER(KO_IME) LIKE '{ko_variants[0].upper()}%'"
+                )
+    # Odstranimo podvojene zapise in ohranimo vrstni red
+    return list(dict.fromkeys(cql_filters))
+
+
+def _flatten_coordinates(geometry: Optional[Dict[str, Any]]) -> List[List[float]]:
+    coords: List[List[float]] = []
+
+    def _extract(geom: Optional[Dict[str, Any]]):
+        if not geom:
+            return
+        gtype = geom.get("type")
+        data = geom.get("coordinates")
+        if not data:
+            if gtype == "GeometryCollection":
+                for sub in geom.get("geometries", []):
+                    _extract(sub)
+            return
+        if gtype == "Point":
+            coords.append(list(data))
+        elif gtype in {"MultiPoint", "LineString"}:
+            for point in data:
+                coords.append(list(point))
+        elif gtype in {"MultiLineString", "Polygon"}:
+            for part in data:
+                for point in part:
+                    coords.append(list(point))
+        elif gtype == "MultiPolygon":
+            for polygon in data:
+                for ring in polygon:
+                    for point in ring:
+                        coords.append(list(point))
+        elif gtype == "GeometryCollection":
+            for sub in geom.get("geometries", []):
+                _extract(sub)
+
+    _extract(geometry)
+    return coords
+
+
+def _compute_geometry_stats(geometry: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    coordinates = _flatten_coordinates(geometry)
+    if not coordinates:
+        return {"bounds": None, "centroid": None}
+
+    xs = [point[0] for point in coordinates]
+    ys = [point[1] for point in coordinates]
+    bounds = [min(xs), min(ys), max(xs), max(ys)]
+    centroid = [sum(xs) / len(xs), sum(ys) / len(ys)]
+    return {"bounds": bounds, "centroid": centroid}
+
+
+async def _query_gurs_parcel(parcel_number: str, ko_name: Optional[str]) -> Optional[Dict[str, Any]]:
+    filters = _build_cql_filters(parcel_number, ko_name)
+    timeout = httpx.Timeout(30.0, connect=10.0)
+    headers = {"User-Agent": "MnenjaAI/1.0"}
+    async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
+        last_http_error: Optional[httpx.HTTPError] = None
+        for cql_filter in filters:
+            params = {
+                "service": "WFS",
+                "version": "1.1.0",
+                "request": "GetFeature",
+                "typeName": GURS_WFS_LAYER,
+                "outputFormat": "application/json",
+                "srsName": "EPSG:4326",
+                "maxFeatures": 1,
+                "CQL_FILTER": cql_filter,
+            }
+            try:
+                response = await client.get(GURS_WFS_URL, params=params)
+                if response.status_code != 200:
+                    logger.debug(
+                        "GURS WFS vrnil status %s za poizvedbo '%s'",
+                        response.status_code,
+                        cql_filter,
+                    )
+                    continue
+                data = response.json()
+            except httpx.HTTPError as exc:
+                last_http_error = exc
+                logger.debug("Poizvedba '%s' ni uspela: %s", cql_filter, exc)
+                continue
+            except ValueError as exc:
+                logger.debug("Poizvedba '%s' ni uspela: %s", cql_filter, exc)
+                continue
+
+            features = data.get("features") or data.get("Features")
+            if features:
+                logger.info(
+                    "GURS WFS: najdena parcela za '%s' (ko=%s) z uporabo filtra '%s'",
+                    parcel_number,
+                    ko_name,
+                    cql_filter,
+                )
+                return features[0]
+    if last_http_error:
+        raise last_http_error
+    return None
+
 def chunk_list(data: List[Any], size: int) -> Iterable[List[Any]]:
     """Pomožna funkcija za razdelitev seznama v manjše sklope."""
     for i in range(0, len(data), size):
@@ -55,6 +206,36 @@ async def frontend() -> str:
 @router.get("/health")
 async def health() -> Dict[str, str]:
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
+
+
+@router.get("/gurs/parcel")
+async def get_gurs_parcel(parcel_number: str, ko: Optional[str] = None) -> Dict[str, Any]:
+    sanitized = _sanitize_parcel_number(parcel_number)
+    if not sanitized:
+        raise HTTPException(status_code=400, detail="Parcelna številka je obvezna.")
+
+    ko_normalized = _normalise_ko(ko)
+
+    try:
+        feature = await _query_gurs_parcel(sanitized, ko_normalized)
+    except httpx.HTTPError as exc:
+        logger.error("Povezava na GURS WFS ni uspela: %s", exc)
+        raise HTTPException(status_code=503, detail="GURS WFS trenutno ni dosegljiv.") from exc
+
+    if not feature:
+        raise HTTPException(status_code=404, detail="Parcele ni bilo mogoče najti v GURS WFS.")
+
+    stats = _compute_geometry_stats(feature.get("geometry"))
+    return {
+        "parcel_number": parcel_number.strip(),
+        "parcel_number_normalized": sanitized,
+        "ko": ko_normalized,
+        "feature": feature,
+        "bounds": stats.get("bounds"),
+        "centroid": stats.get("centroid"),
+        "timestamp": int(time.time() * 1000),
+        "source": {"service": GURS_WFS_URL, "layer": GURS_WFS_LAYER},
+    }
 
 @router.post("/save-session")
 async def save_session(payload: SaveSessionPayload):
