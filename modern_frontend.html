@@ -571,11 +571,6 @@
             expandedRows: new Set(),
             gursLocation: null,
             gursWindow: null,
-            gursMap: null,
-            gursMapOrtho: null,
-            gursMapParcels: null,
-            gursParcelHighlight: null,
-            gursParcelMarker: null,
             hasUnsavedChanges: false,
             saveTimeout: null,
             
@@ -622,21 +617,6 @@
 
                 this.initPdfResize();
                 this.updateGursMapButton();
-
-                const gursOverlay = document.getElementById('gurs-map-overlay');
-                if (gursOverlay) {
-                    gursOverlay.addEventListener('click', (event) => {
-                        if (event.target === gursOverlay) {
-                            this.closeGursMap();
-                        }
-                    });
-                }
-
-                document.addEventListener('keydown', (event) => {
-                    if (event.key === 'Escape' && this.gursWindow) {
-                        this.closeGursMap();
-                    }
-                });
             },
 
             updateGursMapButton() {
@@ -789,125 +769,186 @@
             },
 
             renderGursWindow(location) {
-                if (typeof L === 'undefined') {
-                    this.showToast('error', 'GURS zemljevid', 'Zemljevid ni na voljo (Leaflet ni naložen).');
+                const win = window.open('', 'gursParcelWindow', 'width=1200,height=800,resizable=yes,scrollbars=no');
+                if (!win) {
+                    this.showToast('error', 'Pojavno okno blokirano', 'Omogočite pojavna okna za prikaz GURS zemljevida.');
                     return;
                 }
 
-                const overlay = document.getElementById('gurs-map-overlay');
-                const titleEl = document.getElementById('gurs-map-title');
-                const subtitleEl = document.getElementById('gurs-map-subtitle');
-                if (!overlay || !titleEl || !subtitleEl) {
-                    this.showToast('error', 'GURS zemljevid', 'Uporabniški vmesnik za prikaz lokacije ni na voljo.');
-                    return;
+                const theme = document.body.classList.contains('dark-mode') ? 'dark' : 'light';
+                this.gursWindow = win;
+                const self = this;
+                win.addEventListener('beforeunload', () => { self.gursWindow = null; });
+
+                const parcelJson = JSON.stringify(location).replace(/</g, '\\u003c');
+                const html = `<!DOCTYPE html>
+<html lang="sl">
+<head>
+    <meta charset="UTF-8" />
+    <title>GURS Zemljevid – Parcela ${location.parcel_number || ''}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-o9N1j7k3eWs4v3vU1mE1q+ig+NUwXg2JtGItDG18QJ0=" crossorigin="" />
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-dark: #4f46e5;
+            --accent: #f97316;
+            --bg-dark: #0f172a;
+            --bg-light: #f8fafc;
+            --card-dark: rgba(30, 41, 59, 0.85);
+            --card-light: rgba(255, 255, 255, 0.92);
+            --text-dark: #e2e8f0;
+            --text-light: #0f172a;
+        }
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-light);
+            color: var(--text-light);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        body.dark-mode {
+            background: var(--bg-dark);
+            color: var(--text-dark);
+        }
+        .map-header {
+            padding: 1.5rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: var(--card-light);
+            border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+        }
+        body.dark-mode .map-header {
+            background: var(--card-dark);
+            border-color: rgba(148, 163, 184, 0.25);
+        }
+        .map-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+        .map-subtitle {
+            font-size: 0.95rem;
+            opacity: 0.85;
+            margin-top: 0.25rem;
+        }
+        .map-actions button {
+            padding: 0.6rem 1.2rem;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.9rem;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+        }
+        .map-actions button:hover {
+            transform: translateY(-1px);
+        }
+        #map {
+            flex: 1;
+            width: 100%;
+        }
+        .map-footer {
+            padding: 1rem 2rem;
+            font-size: 0.85rem;
+            background: var(--card-light);
+            border-top: 1px solid rgba(148, 163, 184, 0.2);
+        }
+        body.dark-mode .map-footer {
+            background: var(--card-dark);
+            border-color: rgba(148, 163, 184, 0.25);
+        }
+        .leaflet-control-attribution {
+            font-size: 10px !important;
+        }
+    </style>
+</head>
+<body class="${theme}-mode">
+    <div class="map-header">
+        <div>
+            <div class="map-title">Parcela ${location.parcel_number || '—'}</div>
+            <div class="map-subtitle">k.o. ${location.cadastral_municipality || 'neznano'}</div>
+        </div>
+        <div class="map-actions">
+            <button onclick="window.close()">Zapri</button>
+        </div>
+    </div>
+    <div id="map"></div>
+    <div class="map-footer">
+        Podatki: © GURS – Javne storitve (WMS/WFS). Ortofoto in parcelne meje so informativne narave.
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-Vt3Qt1kI6ZKbpwQIk9O+V1YQUAECEV4VpWw2Dh0wPms=" crossorigin=""></script>
+    <script>
+        const parcelData = ${parcelJson};
+        const centerLat = parcelData?.centroid?.lat ?? 46.056946;
+        const centerLon = parcelData?.centroid?.lon ?? 14.505751;
+        const map = L.map('map', {
+            center: [centerLat, centerLon],
+            zoom: 18,
+            minZoom: 7,
+            maxZoom: 21,
+            zoomControl: true
+        });
+
+        const orthoLayer = L.tileLayer.wms('https://egp.gu.gov.si/egp/wms', {
+            layers: 'SI.GURS.DOF050',
+            format: 'image/jpeg',
+            transparent: false,
+            maxZoom: 21,
+            attribution: '© GURS'
+        }).addTo(map);
+
+        const parcelLayer = L.tileLayer.wms('https://egp.gu.gov.si/egp/wms', {
+            layers: 'SI.GURS.ZKP',
+            format: 'image/png',
+            transparent: true,
+            maxZoom: 21,
+            attribution: '© GURS'
+        }).addTo(map);
+
+        if (parcelData && parcelData.geometry) {
+            const parcelPolygon = L.geoJSON(parcelData.geometry, {
+                style: {
+                    color: '#f97316',
+                    weight: 3,
+                    fillColor: '#f97316',
+                    fillOpacity: 0.25
                 }
+            }).addTo(map);
+            try {
+                map.fitBounds(parcelPolygon.getBounds(), { padding: [40, 40], maxZoom: 20 });
+            } catch (err) {
+                console.warn('Ne morem izračunati obsega parcele:', err);
+            }
+        }
 
-                titleEl.textContent = location?.parcel_number ? `Parcela ${location.parcel_number}` : 'Parcela';
-                subtitleEl.textContent = location?.cadastral_municipality ? `k.o. ${location.cadastral_municipality}` : 'k.o. neznano';
+        if (parcelData && parcelData.centroid && parcelData.centroid.lat && parcelData.centroid.lon) {
+            const marker = L.circleMarker([parcelData.centroid.lat, parcelData.centroid.lon], {
+                radius: 8,
+                color: '#6366f1',
+                fillColor: '#6366f1',
+                fillOpacity: 0.85,
+                weight: 2
+            }).addTo(map);
+            marker.bindPopup(`<strong>Parcela ${parcelData.parcel_number}</strong><br/>k.o. ${parcelData.cadastral_municipality}`);
+            setTimeout(() => marker.openPopup(), 600);
+        }
 
-                const mapContainer = document.getElementById('gurs-map');
-                if (!mapContainer) {
-                    this.showToast('error', 'GURS zemljevid', 'Element zemljevida ni najden.');
-                    return;
-                }
+        map.once('load', () => {
+            map.invalidateSize();
+        });
+    </script>
+</body>
+</html>`;
 
-                overlay.classList.remove('hidden');
-                overlay.classList.add('show');
-                document.body.classList.add('gurs-map-open');
-                this.gursWindow = overlay;
-
-                const centerLat = location?.centroid?.lat ?? 46.056946;
-                const centerLon = location?.centroid?.lon ?? 14.505751;
-
-                if (!this.gursMap) {
-                    this.gursMap = L.map(mapContainer, {
-                        center: [centerLat, centerLon],
-                        zoom: 18,
-                        minZoom: 7,
-                        maxZoom: 21,
-                        zoomControl: true
-                    });
-
-                    this.gursMapOrtho = L.tileLayer.wms('https://egp.gu.gov.si/egp/wms', {
-                        layers: 'SI.GURS.DOF050',
-                        format: 'image/jpeg',
-                        transparent: false,
-                        maxZoom: 21,
-                        attribution: '© GURS'
-                    }).addTo(this.gursMap);
-
-                    this.gursMapParcels = L.tileLayer.wms('https://egp.gu.gov.si/egp/wms', {
-                        layers: 'SI.GURS.ZKP',
-                        format: 'image/png',
-                        transparent: true,
-                        maxZoom: 21,
-                        attribution: '© GURS'
-                    }).addTo(this.gursMap);
-                }
-
-                if (!this.gursMap) {
-                    this.showToast('error', 'GURS zemljevid', 'Zemljevida ni mogoče inicializirati.');
-                    return;
-                }
-
-                if (this.gursParcelHighlight) {
-                    this.gursMap.removeLayer(this.gursParcelHighlight);
-                    this.gursParcelHighlight = null;
-                }
-                if (this.gursParcelMarker) {
-                    this.gursMap.removeLayer(this.gursParcelMarker);
-                    this.gursParcelMarker = null;
-                }
-
-                if (location?.geometry) {
-                    this.gursParcelHighlight = L.geoJSON(location.geometry, {
-                        style: {
-                            color: '#f97316',
-                            weight: 3,
-                            fillColor: '#f97316',
-                            fillOpacity: 0.25
-                        }
-                    }).addTo(this.gursMap);
-                    try {
-                        this.gursMap.fitBounds(this.gursParcelHighlight.getBounds(), { padding: [40, 40], maxZoom: 20 });
-                    } catch (err) {
-                        console.warn('Ne morem izračunati obsega parcele:', err);
-                        this.gursMap.setView([centerLat, centerLon], 18);
-                    }
-                } else {
-                    this.gursMap.setView([centerLat, centerLon], 18);
-                }
-
-                if (location?.centroid?.lat && location?.centroid?.lon) {
-                    this.gursParcelMarker = L.circleMarker([location.centroid.lat, location.centroid.lon], {
-                        radius: 8,
-                        color: '#6366f1',
-                        fillColor: '#6366f1',
-                        fillOpacity: 0.85,
-                        weight: 2
-                    }).addTo(this.gursMap);
-                    this.gursParcelMarker.bindPopup(`<strong>Parcela ${location.parcel_number || ''}</strong><br/>k.o. ${location.cadastral_municipality || ''}`);
-                }
-
-                requestAnimationFrame(() => {
-                    this.gursMap.invalidateSize();
-                    if (this.gursParcelMarker) {
-                        setTimeout(() => {
-                            if (this.gursParcelMarker) {
-                                this.gursParcelMarker.openPopup();
-                            }
-                        }, 400);
-                    }
-                });
-            },
-
-            closeGursMap() {
-                const overlay = document.getElementById('gurs-map-overlay');
-                if (!overlay) return;
-                overlay.classList.remove('show');
-                overlay.classList.add('hidden');
-                document.body.classList.remove('gurs-map-open');
-                this.gursWindow = null;
+                win.document.open();
+                win.document.write(html);
+                win.document.close();
             },
 
             getPdfPopoutButton() {
@@ -1613,17 +1654,10 @@
                 this.keyData = {};
                 this.expandedRows.clear();
                 this.gursLocation = null;
-                if (this.gursParcelHighlight && this.gursMap) {
-                    this.gursMap.removeLayer(this.gursParcelHighlight);
-                    this.gursParcelHighlight = null;
+                if (this.gursWindow && !this.gursWindow.closed) {
+                    this.gursWindow.close();
                 }
-                if (this.gursParcelMarker && this.gursMap) {
-                    this.gursMap.removeLayer(this.gursParcelMarker);
-                    this.gursParcelMarker = null;
-                }
-                if (this.gursWindow) {
-                    this.closeGursMap();
-                }
+                this.gursWindow = null;
                 document.getElementById('file-input').value = '';
                 this.renderFileList();
                 this.updateStepAccess();
