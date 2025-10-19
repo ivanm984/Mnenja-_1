@@ -15,44 +15,11 @@ from .municipalities import (
 )
 
 # Posodobljena različica uporabniškega vmesnika je shranjena kot
-# ``modern_frontend.html`` v korenu paketa. Ob prvem zagonu v nekaterih
-# okoljih (npr. ko je paket nameščen kot zip arhiv) neposreden dostop prek
-# ``Path`` ne uspe, zato najprej poskusimo uporabiti ``importlib.resources``
-# in šele nato lokalno pot kot rezervno možnost.
-FRONTEND_FILENAME = "modern_frontend.html"
-FRONTEND_PATH = PROJECT_ROOT / FRONTEND_FILENAME
-
-
-def _template_candidates() -> Iterable[Path]:
-    """Yield possible filesystem paths to the modern frontend template."""
-
-    package = __package__ or "app"
-    try:
-        # ``importlib.resources.files`` poskrbi, da deluje tudi pri zgoščenih
-        # distribucijah, kjer datoteka ni neposredno prisotna na datotečnem
-        # sistemu. ``as_file`` poskrbi za morebitno razpakiranje v začasno
-        # mapo.
-        with resources.as_file(resources.files(package).joinpath(FRONTEND_FILENAME)) as handle:
-            yield handle
-    except (FileNotFoundError, ModuleNotFoundError):
-        pass
-
-    yield FRONTEND_PATH
-
-
-@lru_cache(maxsize=1)
-def _load_template() -> str:
-    """Read the frontend HTML template from the first existing candidate."""
-
-    for candidate in _template_candidates():
-        try:
-            return candidate.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            continue
-    raise FileNotFoundError(
-        "Posodobljene HTML predloge ni mogoče najti. Pričakovana je pod imenom "
-        f"{FRONTEND_FILENAME}."
-    )
+# ``modern_frontend.html`` v korenu paketa. Prejšnja nastavitev je še vedno
+# iskala neobstoječo pot ``app/frontend.html``, zaradi česar se je ob prvem
+# obisku vrnila napaka oziroma prazna stran. Usmerimo referenco na dejansko
+# datoteko.
+FRONTEND_PATH = PROJECT_ROOT / "modern_frontend.html"
 
 
 def build_homepage() -> str:
