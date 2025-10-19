@@ -58,19 +58,6 @@ class DatabaseManager:
                     FOREIGN KEY (session_id) REFERENCES sessions (session_id) ON DELETE CASCADE
                 );
             """)
-            await db.execute("""
-                CREATE TABLE IF NOT EXISTS gurs_locations (
-                    session_id TEXT PRIMARY KEY,
-                    parcel_number TEXT NOT NULL,
-                    cadastral_municipality TEXT NOT NULL,
-                    centroid_lat REAL,
-                    centroid_lon REAL,
-                    geometry_geojson TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (session_id) REFERENCES sessions (session_id) ON DELETE CASCADE
-                );
-            """)
             await db.commit()
 
     async def upsert_session(self, session_id: str, project_name: str, summary: str, data: Dict[str, Any]):
@@ -116,7 +103,6 @@ class DatabaseManager:
         async with self._get_connection() as db:
             await db.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
             await db.execute("DELETE FROM revisions WHERE session_id = ?", (session_id,))
-            await db.execute("DELETE FROM gurs_locations WHERE session_id = ?", (session_id,))
             await db.commit()
 
     async def record_revision(self, session_id: str, filenames: List[str], file_paths: List[str], requirement_id: str | None = None, note: str | None = None, mime_types: List[str] | None = None) -> Dict:
@@ -148,71 +134,6 @@ class DatabaseManager:
                 data['file_paths'] = json.loads(data.get('file_paths', '[]'))
                 results.append(data)
             return results
-
-    async def upsert_gurs_location(
-        self,
-        session_id: str,
-        parcel_number: str,
-        cadastral_municipality: str,
-        centroid_lat: float | None,
-        centroid_lon: float | None,
-        geometry: Dict[str, Any] | None,
-    ) -> None:
-        async with self._get_connection() as db:
-            await db.execute(
-                """
-                INSERT INTO gurs_locations (
-                    session_id, parcel_number, cadastral_municipality,
-                    centroid_lat, centroid_lon, geometry_geojson, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(session_id) DO UPDATE SET
-                    parcel_number=excluded.parcel_number,
-                    cadastral_municipality=excluded.cadastral_municipality,
-                    centroid_lat=excluded.centroid_lat,
-                    centroid_lon=excluded.centroid_lon,
-                    geometry_geojson=excluded.geometry_geojson,
-                    updated_at=excluded.updated_at;
-                """,
-                (
-                    session_id,
-                    parcel_number,
-                    cadastral_municipality,
-                    centroid_lat,
-                    centroid_lon,
-                    json.dumps(geometry) if geometry is not None else None,
-                    datetime.utcnow(),
-                ),
-            )
-            await db.commit()
-
-    async def fetch_gurs_location(self, session_id: str) -> Optional[Dict[str, Any]]:
-        async with self._get_connection() as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                "SELECT parcel_number, cadastral_municipality, centroid_lat, centroid_lon, geometry_geojson, updated_at FROM gurs_locations WHERE session_id = ?",
-                (session_id,),
-            )
-            row = await cursor.fetchone()
-            if not row:
-                return None
-
-            geometry_raw = row["geometry_geojson"]
-            geometry = json.loads(geometry_raw) if geometry_raw else None
-            return {
-                "parcel_number": row["parcel_number"],
-                "cadastral_municipality": row["cadastral_municipality"],
-                "centroid": {
-                    "lat": row["centroid_lat"],
-                    "lon": row["centroid_lon"],
-                },
-                "geometry": geometry,
-                "updated_at": row["updated_at"],
-            }
-
-    async def delete_gurs_location(self, session_id: str) -> None:
-        async with self._get_connection() as db:
-            await db.execute("DELETE FROM gurs_locations WHERE session_id = ?", (session_id,))
-            await db.commit()
 
 
 # Ustvarimo eno samo instanco, ki jo bo uporabljala celotna aplikacija.

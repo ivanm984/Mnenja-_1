@@ -5,18 +5,15 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import math
 import re
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional
 
-import httpx
 from fastapi import (APIRouter, BackgroundTasks, File, Form, HTTPException,
                    UploadFile)
 from fastapi.responses import FileResponse, HTMLResponse
-from pydantic import BaseModel
 
 from .ai import (call_gemini_async, call_gemini_for_details_async,
                  call_gemini_for_key_data_async,
@@ -45,177 +42,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 ANALYSIS_CHUNK_SIZE = 15
-GURS_WFS_URL = "https://egp.gu.gov.si/egp/wfs"
-
-
-class ParcelLocationPayload(BaseModel):
-    session_id: str
-    parcel_number: str
-    cadastral_municipality: str
-
-
-class GursServiceError(Exception):
-    """Signalizira, da GURS storitev ni vrnila veljavnega odgovora."""
-
-
-class GursNotFoundError(Exception):
-    """Signalizira, da iskane parcele ni bilo mogoče najti."""
-
 
 def chunk_list(data: List[Any], size: int) -> Iterable[List[Any]]:
     """Pomožna funkcija za razdelitev seznama v manjše sklope."""
     for i in range(0, len(data), size):
         yield data[i : i + size]
-
-
-def _normalize_ko_name(value: str) -> str:
-    return re.sub(r"\s+", " ", value or "").strip()
-
-
-def _build_gurs_params(parcel_number: str, cadastral_municipality: str) -> Dict[str, str]:
-    parcel = parcel_number.strip()
-    ko = _normalize_ko_name(cadastral_municipality)
-    filters = []
-    if ko:
-        ko_safe = ko.replace("'", "''").upper()
-        filters.append(f"UPPER(KO_NAZIV) LIKE '%{ko_safe}%'")
-    if parcel:
-        parcel_safe = parcel.replace("'", "''")
-        filters.append(f"PARCELNA_ST='{parcel_safe}'")
-    cql_filter = " AND ".join(filters)
-    return {
-        "service": "WFS",
-        "request": "GetFeature",
-        "version": "2.0.0",
-        "typeNames": "RPE:Parcele",
-        "outputFormat": "application/json",
-        "srsName": "EPSG:4326",
-        "count": "1",
-        "CQL_FILTER": cql_filter,
-    }
-
-
-def _geometry_points(geometry: Dict[str, Any]) -> List[Tuple[float, float]]:
-    points: List[Tuple[float, float]] = []
-
-    def _extract(node: Any) -> None:
-        if isinstance(node, (list, tuple)) and node and isinstance(node[0], (int, float)) and isinstance(node[1], (int, float)):
-            points.append((float(node[0]), float(node[1])))
-        elif isinstance(node, (list, tuple)):
-            for value in node:
-                _extract(value)
-
-    _extract(geometry.get("coordinates", []))
-    return points
-
-
-def _compute_polygon_centroid(points: List[Tuple[float, float]]) -> Optional[Tuple[float, float]]:
-    if len(points) < 3:
-        if not points:
-            return None
-        avg_lon = sum(pt[0] for pt in points) / len(points)
-        avg_lat = sum(pt[1] for pt in points) / len(points)
-        return avg_lon, avg_lat
-
-    area = 0.0
-    cx = 0.0
-    cy = 0.0
-    for i in range(len(points) - 1):
-        x0, y0 = points[i]
-        x1, y1 = points[i + 1]
-        cross = x0 * y1 - x1 * y0
-        area += cross
-        cx += (x0 + x1) * cross
-        cy += (y0 + y1) * cross
-
-    area *= 0.5
-    if math.isclose(area, 0.0, abs_tol=1e-9):
-        return _compute_polygon_centroid(points[:-1])
-
-    cx /= 6.0 * area
-    cy /= 6.0 * area
-    return cx, cy
-
-
-def compute_geojson_centroid(geometry: Optional[Dict[str, Any]]) -> Optional[Tuple[float, float]]:
-    if not geometry:
-        return None
-
-    geom_type = geometry.get("type")
-    coords = geometry.get("coordinates")
-    if not coords:
-        return None
-
-    if geom_type == "Point":
-        lon, lat = coords
-        return float(lon), float(lat)
-
-    if geom_type == "MultiPoint":
-        pts = _geometry_points(geometry)
-        if not pts:
-            return None
-        avg_lon = sum(pt[0] for pt in pts) / len(pts)
-        avg_lat = sum(pt[1] for pt in pts) / len(pts)
-        return avg_lon, avg_lat
-
-    if geom_type in {"Polygon", "MultiPolygon"}:
-        poly_points: List[Tuple[float, float]] = []
-        if geom_type == "Polygon":
-            for ring in coords:
-                poly_points.extend(ring)
-        else:
-            for polygon in coords:
-                for ring in polygon:
-                    poly_points.extend(ring)
-        centroid = _compute_polygon_centroid(poly_points)
-        if centroid:
-            return centroid
-        if poly_points:
-            avg_lon = sum(pt[0] for pt in poly_points) / len(poly_points)
-            avg_lat = sum(pt[1] for pt in poly_points) / len(poly_points)
-            return avg_lon, avg_lat
-
-    pts = _geometry_points(geometry)
-    if not pts:
-        return None
-    avg_lon = sum(pt[0] for pt in pts) / len(pts)
-    avg_lat = sum(pt[1] for pt in pts) / len(pts)
-    return avg_lon, avg_lat
-
-
-async def fetch_gurs_parcel(parcel_number: str, cadastral_municipality: str) -> Dict[str, Any]:
-    params = _build_gurs_params(parcel_number, cadastral_municipality)
-    try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.get(GURS_WFS_URL, params=params)
-            response.raise_for_status()
-    except httpx.HTTPError as exc:  # pragma: no cover - mrežne napake
-        raise GursServiceError("Ni mogoče vzpostaviti povezave z GURS storitvijo.") from exc
-
-    try:
-        payload = response.json()
-    except json.JSONDecodeError as exc:
-        raise GursServiceError("Neveljaven odgovor GURS storitve.") from exc
-
-    features = payload.get("features") or []
-    if not features:
-        raise GursNotFoundError("Parcele ni bilo mogoče najti v podatkovni bazi GURS.")
-
-    feature = features[0]
-    geometry = feature.get("geometry")
-    centroid = compute_geojson_centroid(geometry)
-    centroid_dict = None
-    if centroid:
-        centroid_dict = {"lon": centroid[0], "lat": centroid[1]}
-
-    return {
-        "geometry": geometry,
-        "centroid": centroid_dict,
-        "properties": feature.get("properties", {}),
-        "bbox": feature.get("bbox"),
-        "parcel_number": parcel_number,
-        "cadastral_municipality": cadastral_municipality,
-    }
 
 @router.get("/", response_class=HTMLResponse)
 async def frontend() -> str:
@@ -231,20 +62,6 @@ async def save_session(payload: SaveSessionPayload):
     project_name = payload.project_name or infer_project_name(data)
     summary = payload.summary or compute_session_summary(data)
     await db_manager.upsert_session(session_id, project_name, summary, data)
-    gurs_location = data.get("gurs_location") if isinstance(data, dict) else None
-    if isinstance(gurs_location, dict):
-        try:
-            centroid = gurs_location.get("centroid") or {}
-            await db_manager.upsert_gurs_location(
-                session_id=session_id,
-                parcel_number=str(gurs_location.get("parcel_number", "")).strip(),
-                cadastral_municipality=str(gurs_location.get("cadastral_municipality", "")).strip(),
-                centroid_lat=centroid.get("lat"),
-                centroid_lon=centroid.get("lon"),
-                geometry=gurs_location.get("geometry"),
-            )
-        except Exception:  # pragma: no cover - dodatna robustnost
-            logger.exception("[%s] Shranjevanje GURS lokacije ni uspelo", session_id)
     return {
         "message": "Analiza je shranjena.",
         "session_id": session_id,
@@ -276,9 +93,6 @@ async def get_saved_session(session_id: str):
         raise HTTPException(status_code=404, detail="Shranjena analiza ne obstaja.")
     revisions = await db_manager.fetch_revisions(session_id)
     record["revisions"] = revisions
-    location = await db_manager.fetch_gurs_location(session_id)
-    if location:
-        record["gurs_location"] = location
     return record
 
 @router.delete("/saved-sessions/{session_id}")
@@ -288,65 +102,6 @@ async def remove_saved_session(session_id: str):
         raise HTTPException(status_code=404, detail="Shranjena analiza ne obstaja.")
     await db_manager.delete_session(session_id)
     return {"message": "Shranjena analiza je izbrisana.", "session_id": session_id}
-
-
-@router.post("/gurs/parcel-location")
-async def resolve_gurs_parcel(payload: ParcelLocationPayload):
-    session_id = payload.session_id.strip()
-    parcel_number = payload.parcel_number.strip()
-    cadastral_municipality = payload.cadastral_municipality.strip()
-
-    if not parcel_number or not cadastral_municipality:
-        raise HTTPException(
-            status_code=400,
-            detail="Parcelna številka in katastrska občina sta obvezni polji.",
-        )
-
-    try:
-        feature = await fetch_gurs_parcel(parcel_number, cadastral_municipality)
-    except GursNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except GursServiceError as exc:
-        logger.warning("[GURS] Napaka pri iskanju parcele: %s", exc)
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    normalized_ko = _normalize_ko_name(cadastral_municipality)
-    result = {
-        "parcel_number": parcel_number,
-        "cadastral_municipality": normalized_ko,
-        "centroid": feature.get("centroid"),
-        "geometry": feature.get("geometry"),
-        "bbox": feature.get("bbox"),
-        "properties": feature.get("properties"),
-        "source": {
-            "service": GURS_WFS_URL,
-            "typeNames": "RPE:Parcele",
-        },
-    }
-
-    if session_id:
-        centroid = result["centroid"] or {}
-        try:
-            await db_manager.upsert_gurs_location(
-                session_id=session_id,
-                parcel_number=parcel_number,
-                cadastral_municipality=normalized_ko,
-                centroid_lat=centroid.get("lat"),
-                centroid_lon=centroid.get("lon"),
-                geometry=result.get("geometry"),
-            )
-        except Exception:  # pragma: no cover - robustnost
-            logger.exception("[%s] Shranjevanje GURS lokacije ni uspelo", session_id)
-
-    return result
-
-
-@router.get("/gurs/parcel-location/{session_id}")
-async def get_gurs_location(session_id: str):
-    location = await db_manager.fetch_gurs_location(session_id)
-    if not location:
-        raise HTTPException(status_code=404, detail="Lokacija parcele ni shranjena.")
-    return location
 
 @router.post("/extract-data")
 async def extract_data(
@@ -707,12 +462,8 @@ async def confirm_report(payload: ConfirmReportPayload, background_tasks: Backgr
         preferred_type: Optional[type] = None
 
         for existing_key, existing_value in existing_map.items():
+            merged_map[existing_key] = existing_value.copy() if isinstance(existing_value, dict) else existing_value
             existing_key_lookup[str(existing_key)] = existing_key
-
-            if not isinstance(existing_value, dict):
-                continue
-
-            merged_map[existing_key] = existing_value.copy()
 
         if existing_key_lookup:
             preferred_type = type(next(iter(existing_key_lookup.values())))

@@ -7,15 +7,9 @@
     
     <!-- PDF.js knjižnica -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     </script>
-
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
     
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -82,7 +76,6 @@
         @keyframes progressShimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
         
         .hidden { display: none !important; }
-        body.gurs-map-open { overflow: hidden; }
         .app-container { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 2rem; transition: margin 0.35s ease, width 0.35s ease, max-width 0.35s ease; }
         .progress-bar-container { position: fixed; top: 0; left: 0; right: 0; z-index: 4000; background: var(--bg-card); border-bottom: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); transform: translateY(-100%); transition: transform 0.3s ease; }
         .progress-bar-container.active { transform: translateY(0); }
@@ -179,23 +172,6 @@
         
         .spinner-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; z-index: 1000; }
         .spinner { width: 60px; height: 60px; border: 4px solid rgba(99, 102, 241, 0.2); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1.5rem; }
-
-        .gurs-map-overlay { position: fixed; inset: 0; z-index: 5000; display: none; align-items: center; justify-content: center; padding: 2rem; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px); }
-        .gurs-map-overlay.show { display: flex; }
-        .gurs-map-dialog { width: min(1000px, 94vw); max-width: 1100px; min-height: 520px; display: flex; flex-direction: column; background: var(--bg-card); border: 1px solid var(--border); border-radius: 24px; box-shadow: 0 35px 60px -25px rgba(15, 23, 42, 0.6); overflow: hidden; position: relative; }
-        body.dark-mode .gurs-map-dialog { background: rgba(30, 41, 59, 0.92); border-color: rgba(148, 163, 184, 0.3); }
-        .gurs-map-header { padding: 1.75rem 2rem; display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(99, 102, 241, 0) 100%); border-bottom: 1px solid var(--border); }
-        body.dark-mode .gurs-map-header { background: linear-gradient(135deg, rgba(99, 102, 241, 0.25) 0%, rgba(30, 41, 59, 0.25) 100%); }
-        .gurs-map-title { font-size: 1.35rem; font-weight: 700; color: var(--text); }
-        .gurs-map-subtitle { margin-top: 0.35rem; color: var(--text-muted); font-size: 0.95rem; }
-        .gurs-map-close { border: none; background: rgba(255, 255, 255, 0.08); border-radius: 12px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; cursor: pointer; color: var(--text); transition: all 0.25s ease; }
-        body.light-mode .gurs-map-close { background: rgba(99, 102, 241, 0.1); }
-        .gurs-map-close:hover { transform: scale(1.05); background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); color: white; }
-        .gurs-map-body { flex: 1; position: relative; }
-        #gurs-map { width: 100%; height: clamp(340px, 65vh, 640px); }
-        .gurs-map-footer { padding: 1rem 2rem; font-size: 0.85rem; color: var(--text-muted); background: var(--bg-card); border-top: 1px solid var(--border); }
-        body.dark-mode .gurs-map-footer { background: rgba(30, 41, 59, 0.9); border-color: rgba(148, 163, 184, 0.25); }
-        .gurs-map-dialog .leaflet-control-attribution { font-size: 10px !important; }
         
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
         .stat-card { padding: 1.5rem; border-radius: 16px; border: 1px solid; cursor: pointer; transition: all 0.3s ease; }
@@ -402,12 +378,7 @@
                 
                 <h3 style="margin-bottom: 1rem; color: var(--text); font-size: 1.25rem;">B. Ključni Podatki Projekta</h3>
                 <div class="key-data-grid" id="key-data-grid"></div>
-                <div class="actions-bar" style="justify-content: flex-end;">
-                    <button class="btn btn-secondary" id="gurs-map-btn" onclick="app.openGursMap()" disabled>
-                        🗺️ GURS Zemljevid
-                    </button>
-                </div>
-
+                
                 <div class="actions-bar">
                     <button class="btn btn-secondary" onclick="app.previousStep()">← Nazaj</button>
                     <button class="btn btn-primary" onclick="app.confirmAndAnalyze()">Potrdi in Analiziraj →</button>
@@ -444,24 +415,6 @@
                 <div class="actions-bar">
                     <button class="btn btn-secondary" onclick="app.resetAnalysis()">🔄 Nova Analiza</button>
                     <button class="btn btn-primary" onclick="app.downloadReport()">📥 Prenesi Poročilo</button>
-                </div>
-            </div>
-        </div>
-
-        <div class="gurs-map-overlay hidden" id="gurs-map-overlay">
-            <div class="gurs-map-dialog" role="dialog" aria-modal="true">
-                <div class="gurs-map-header">
-                    <div>
-                        <div class="gurs-map-title" id="gurs-map-title">Parcela</div>
-                        <div class="gurs-map-subtitle" id="gurs-map-subtitle">k.o. —</div>
-                    </div>
-                    <button class="gurs-map-close" onclick="app.closeGursMap()" aria-label="Zapri GURS zemljevid">✕</button>
-                </div>
-                <div class="gurs-map-body">
-                    <div id="gurs-map"></div>
-                </div>
-                <div class="gurs-map-footer">
-                    Podatki: © GURS – Javne storitve (WMS/WFS). Ortofoto in parcelne meje so informativne narave.
                 </div>
             </div>
         </div>
@@ -569,8 +522,6 @@
             eupRabaPairs: [],
             keyData: {},
             expandedRows: new Set(),
-            gursLocation: null,
-            gursWindow: null,
             hasUnsavedChanges: false,
             saveTimeout: null,
             
@@ -616,340 +567,7 @@
                 }
 
                 this.initPdfResize();
-                this.updateGursMapButton();
             },
-
-            updateGursMapButton() {
-                const btn = document.getElementById('gurs-map-btn');
-                if (!btn) return;
-                const hasSession = !!this.sessionId;
-                btn.disabled = !hasSession;
-                if (!hasSession) {
-                    btn.title = 'Najprej dokončajte ekstrakcijo dokumentov.';
-                    return;
-                }
-
-                if (this.gursLocation && this.gursLocation.parcel_number) {
-                    btn.title = `Parcela ${this.gursLocation.parcel_number}, k.o. ${this.gursLocation.cadastral_municipality}`;
-                } else {
-                    btn.title = 'Pridobi lokacijo parcele iz javnih podatkov GURS.';
-                }
-            },
-
-            normalizeKoName(value) {
-                if (!value) return '';
-                return value
-                    .replace(/k\.?\s*o\.?/gi, '')
-                    .replace(/[^\p{L}\s-]/gu, ' ')
-                    .replace(/\s+/g, ' ')
-                    .trim();
-            },
-
-            extractParcelReference() {
-                const parcelField = (this.keyData.parcela_objekta || '').toString();
-                const listField = (this.keyData.stevilke_parcel_ko || '').toString();
-                const combined = `${parcelField} ${listField}`.trim();
-                const parcelMatch = combined.match(/(\d{1,4}\/\d{1,4}|\d{1,4})(?=[^\d]|$)/);
-                const parcelNumber = parcelMatch ? parcelMatch[0] : '';
-
-                let cadastralMunicipality = '';
-                const directKoMatch = listField.match(/k\.?\s*o\.?\s*([^,;\n]+)/i) || combined.match(/k\.?\s*o\.?\s*([^,;\n]+)/i);
-                if (directKoMatch) {
-                    cadastralMunicipality = this.normalizeKoName(directKoMatch[1]);
-                }
-
-                if (!cadastralMunicipality && listField) {
-                    const cleaned = this.normalizeKoName(listField);
-                    if (cleaned) cadastralMunicipality = cleaned;
-                }
-
-                if (!cadastralMunicipality && parcelField) {
-                    const cleaned = this.normalizeKoName(parcelField);
-                    if (cleaned) cadastralMunicipality = cleaned;
-                }
-
-                return { parcelNumber, cadastralMunicipality };
-            },
-
-            async tryResolveGursLocation(options = {}) {
-                const { silent = false, force = false } = options;
-                if (!this.sessionId) {
-                    if (!silent) {
-                        this.showToast('warning', 'Ni aktivne seje', 'Najprej izvedite ekstrakcijo dokumentov.');
-                    }
-                    return null;
-                }
-
-                const { parcelNumber, cadastralMunicipality } = this.extractParcelReference();
-                if (!parcelNumber || !cadastralMunicipality) {
-                    if (!silent) {
-                        this.showToast('warning', 'Manjkajo podatki', 'V izvlečenih podatkih ni mogoče prepoznati parcelne številke ali katastrske občine.');
-                    }
-                    return null;
-                }
-
-                if (!force && this.gursLocation && this.gursLocation.parcel_number === parcelNumber &&
-                    this.gursLocation.cadastral_municipality &&
-                    this.gursLocation.cadastral_municipality.toLowerCase() === cadastralMunicipality.toLowerCase()) {
-                    return this.gursLocation;
-                }
-
-                try {
-                    const payload = {
-                        session_id: this.sessionId,
-                        parcel_number: parcelNumber,
-                        cadastral_municipality: cadastralMunicipality
-                    };
-                    const response = await fetch('/gurs/parcel-location', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-
-                    if (!response.ok) {
-                        let message = 'Ni mogoče pridobiti podatkov GURS.';
-                        try {
-                            const errorData = await response.json();
-                            if (errorData && errorData.detail) message = errorData.detail;
-                        } catch (_) { /* ignoriraj */ }
-                        throw new Error(message);
-                    }
-
-                    const data = await response.json();
-                    this.gursLocation = data;
-                    this.updateGursMapButton();
-                    if (!silent) {
-                        this.showToast('success', 'GURS lokacija', `Parcela ${data.parcel_number}, k.o. ${data.cadastral_municipality}`);
-                    }
-                    return data;
-                } catch (error) {
-                    if (!silent) {
-                        this.showToast('error', 'GURS lokacija', error.message || 'Prišlo je do neznane napake.');
-                    }
-                    throw error;
-                }
-            },
-
-            async openGursMap() {
-                if (!this.sessionId) {
-                    this.showToast('warning', 'Ni aktivne seje', 'Najprej izvedite ekstrakcijo dokumentov.');
-                    return;
-                }
-
-                this.showLoading('Pripravljam GURS zemljevid...');
-                try {
-                    const reference = this.extractParcelReference();
-                    if (!reference.parcelNumber || !reference.cadastralMunicipality) {
-                        this.hideLoading();
-                        this.showToast('warning', 'Manjkajo podatki', 'V izvlečenih podatkih ni mogoče prepoznati parcelne številke ali katastrske občine.');
-                        return;
-                    }
-
-                    let location = this.gursLocation;
-                    const sameLocation = location && location.parcel_number === reference.parcelNumber &&
-                        location.cadastral_municipality &&
-                        location.cadastral_municipality.toLowerCase() === reference.cadastralMunicipality.toLowerCase();
-
-                    if (!sameLocation) {
-                        location = await this.tryResolveGursLocation({ silent: true, force: true });
-                    }
-
-                    this.hideLoading();
-
-                    if (!location) {
-                        this.showToast('error', 'GURS zemljevid', 'Lokacije parcele ni bilo mogoče pridobiti.');
-                        return;
-                    }
-
-                    this.renderGursWindow(location);
-                } catch (error) {
-                    this.hideLoading();
-                    this.showToast('error', 'GURS zemljevid', error.message || 'Lokacije ni mogoče prikazati.');
-                }
-            },
-
-            renderGursWindow(location) {
-                const win = window.open('', 'gursParcelWindow', 'width=1200,height=800,resizable=yes,scrollbars=no');
-                if (!win) {
-                    this.showToast('error', 'Pojavno okno blokirano', 'Omogočite pojavna okna za prikaz GURS zemljevida.');
-                    return;
-                }
-
-                const theme = document.body.classList.contains('dark-mode') ? 'dark' : 'light';
-                this.gursWindow = win;
-                const self = this;
-                win.addEventListener('beforeunload', () => { self.gursWindow = null; });
-
-                const parcelJson = JSON.stringify(location).replace(/</g, '\\u003c');
-                const html = `<!DOCTYPE html>
-<html lang="sl">
-<head>
-    <meta charset="UTF-8" />
-    <title>GURS Zemljevid – Parcela ${location.parcel_number || ''}</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-    <style>
-        :root {
-            --primary: #6366f1;
-            --primary-dark: #4f46e5;
-            --accent: #f97316;
-            --bg-dark: #0f172a;
-            --bg-light: #f8fafc;
-            --card-dark: rgba(30, 41, 59, 0.85);
-            --card-light: rgba(255, 255, 255, 0.92);
-            --text-dark: #e2e8f0;
-            --text-light: #0f172a;
-        }
-        body {
-            margin: 0;
-            font-family: 'Segoe UI', Roboto, sans-serif;
-            background: var(--bg-light);
-            color: var(--text-light);
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
-        body.dark-mode {
-            background: var(--bg-dark);
-            color: var(--text-dark);
-        }
-        .map-header {
-            padding: 1.5rem 2rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: var(--card-light);
-            border-bottom: 1px solid rgba(148, 163, 184, 0.2);
-        }
-        body.dark-mode .map-header {
-            background: var(--card-dark);
-            border-color: rgba(148, 163, 184, 0.25);
-        }
-        .map-title {
-            font-size: 1.25rem;
-            font-weight: 700;
-        }
-        .map-subtitle {
-            font-size: 0.95rem;
-            opacity: 0.85;
-            margin-top: 0.25rem;
-        }
-        .map-actions button {
-            padding: 0.6rem 1.2rem;
-            border-radius: 10px;
-            border: none;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 0.9rem;
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-            color: white;
-            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
-        }
-        .map-actions button:hover {
-            transform: translateY(-1px);
-        }
-        #map {
-            flex: 1;
-            width: 100%;
-        }
-        .map-footer {
-            padding: 1rem 2rem;
-            font-size: 0.85rem;
-            background: var(--card-light);
-            border-top: 1px solid rgba(148, 163, 184, 0.2);
-        }
-        body.dark-mode .map-footer {
-            background: var(--card-dark);
-            border-color: rgba(148, 163, 184, 0.25);
-        }
-        .leaflet-control-attribution {
-            font-size: 10px !important;
-        }
-    </style>
-</head>
-<body class="${theme}-mode">
-    <div class="map-header">
-        <div>
-            <div class="map-title">Parcela ${location.parcel_number || '—'}</div>
-            <div class="map-subtitle">k.o. ${location.cadastral_municipality || 'neznano'}</div>
-        </div>
-        <div class="map-actions">
-            <button onclick="window.close()">Zapri</button>
-        </div>
-    </div>
-    <div id="map"></div>
-    <div class="map-footer">
-        Podatki: © GURS – Javne storitve (WMS/WFS). Ortofoto in parcelne meje so informativne narave.
-    </div>
-
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-    <script>
-        const parcelData = ${parcelJson};
-        const centerLat = parcelData?.centroid?.lat ?? 46.056946;
-        const centerLon = parcelData?.centroid?.lon ?? 14.505751;
-        const map = L.map('map', {
-            center: [centerLat, centerLon],
-            zoom: 18,
-            minZoom: 7,
-            maxZoom: 21,
-            zoomControl: true
-        });
-
-        const orthoLayer = L.tileLayer.wms('https://egp.gu.gov.si/egp/wms', {
-            layers: 'SI.GURS.DOF050',
-            format: 'image/jpeg',
-            transparent: false,
-            maxZoom: 21,
-            attribution: '© GURS'
-        }).addTo(map);
-
-        const parcelLayer = L.tileLayer.wms('https://egp.gu.gov.si/egp/wms', {
-            layers: 'SI.GURS.ZKP',
-            format: 'image/png',
-            transparent: true,
-            maxZoom: 21,
-            attribution: '© GURS'
-        }).addTo(map);
-
-        if (parcelData && parcelData.geometry) {
-            const parcelPolygon = L.geoJSON(parcelData.geometry, {
-                style: {
-                    color: '#f97316',
-                    weight: 3,
-                    fillColor: '#f97316',
-                    fillOpacity: 0.25
-                }
-            }).addTo(map);
-            try {
-                map.fitBounds(parcelPolygon.getBounds(), { padding: [40, 40], maxZoom: 20 });
-            } catch (err) {
-                console.warn('Ne morem izračunati obsega parcele:', err);
-            }
-        }
-
-        if (parcelData && parcelData.centroid && parcelData.centroid.lat && parcelData.centroid.lon) {
-            const marker = L.circleMarker([parcelData.centroid.lat, parcelData.centroid.lon], {
-                radius: 8,
-                color: '#6366f1',
-                fillColor: '#6366f1',
-                fillOpacity: 0.85,
-                weight: 2
-            }).addTo(map);
-            marker.bindPopup(`<strong>Parcela ${parcelData.parcel_number}</strong><br/>k.o. ${parcelData.cadastral_municipality}`);
-            setTimeout(() => marker.openPopup(), 600);
-        }
-
-        map.once('load', () => {
-            map.invalidateSize();
-        });
-    </script>
-</body>
-</html>`;
-
-                win.document.open();
-                win.document.write(html);
-                win.document.close();
-},  // To je prav - konec renderGursWindow funkcije
 
             getPdfPopoutButton() {
                 if (!this.pdfPopoutButton || !document.body.contains(this.pdfPopoutButton)) {
@@ -1323,7 +941,6 @@
                     this.updateProgress('Ekstrahiram podatke', 'Pripravljam rezultate...', 85);
 
                     this.sessionId = data.session_id;
-                    this.updateGursMapButton();
                     this.eupRabaPairs = (data.eup || []).map((eup, i) => ({ eup, raba: (data.namenska_raba || [])[i] || '' }));
                     if (this.eupRabaPairs.length === 0) this.eupRabaPairs = [{ eup: '', raba: '' }];
 
@@ -1334,7 +951,6 @@
 
                     this.renderEupRabaPairs();
                     this.renderKeyData();
-                    this.tryResolveGursLocation({ silent: true }).catch(() => {});
                     this.updateProgress('Ekstrahiram podatke', 'Dokončano!', 100);
                     setTimeout(() => {
                         this.hideProgress();
@@ -1602,8 +1218,7 @@
                         metadata: {},
                         key_data: this.keyData,
                         eup: this.eupRabaPairs.map(p => p.eup),
-                        namenska_raba: this.eupRabaPairs.map(p => p.raba),
-                        gurs_location: this.gursLocation
+                        namenska_raba: this.eupRabaPairs.map(p => p.raba)
                     };
                     
                     this.results.forEach(r => {
@@ -1653,17 +1268,11 @@
                 this.eupRabaPairs = [];
                 this.keyData = {};
                 this.expandedRows.clear();
-                this.gursLocation = null;
-                if (this.gursWindow && !this.gursWindow.closed) {
-                    this.gursWindow.close();
-                }
-                this.gursWindow = null;
                 document.getElementById('file-input').value = '';
                 this.renderFileList();
                 this.updateStepAccess();
                 this.updateUI();
                 document.getElementById('extract-btn').disabled = true;
-                this.updateGursMapButton();
                 this.showToast('info', 'Resetirano', 'Začni novo analizo');
             },
 
@@ -1844,7 +1453,7 @@
                     
                     this.sessionId = sessionId;
                     const sessionData = typeof data.data === 'string' ? JSON.parse(data.data) : data.data;
-
+                    
                     this.eupRabaPairs = (sessionData.eup || []).map((eup, i) => ({
                         eup,
                         raba: (sessionData.namenska_raba || [])[i] || ''
@@ -1852,8 +1461,7 @@
                     if (this.eupRabaPairs.length === 0) this.eupRabaPairs = [{ eup: '', raba: '' }];
                     
                     this.keyData = sessionData.key_data || {};
-                    this.gursLocation = data.gurs_location || sessionData.gurs_location || null;
-
+                    
                     const resultsMap = sessionData.results_map || {};
                     this.results = (sessionData.zahteve || []).map(req => {
                         const result = resultsMap[req.id] || {};
@@ -1874,11 +1482,10 @@
                     this.renderKeyData();
                     this.renderResults();
                     this.updateStepAccess();
-                    this.updateGursMapButton();
-
+                    
                     this.currentStep = 4;
                     this.updateUI();
-
+                    
                     this.hideLoading();
                     this.showToast('success', 'Analiza naložena', 'Lahko nadaljujete z urejanjem');
                 } catch (error) {
