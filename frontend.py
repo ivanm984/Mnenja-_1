@@ -10,7 +10,12 @@ from .municipalities import (
     municipality_public_payload,
 )
 
-FRONTEND_PATH = PROJECT_ROOT / "app" / "frontend.html"
+# Posodobljena različica uporabniškega vmesnika je shranjena kot
+# ``modern_frontend.html`` v korenu paketa. Prejšnja nastavitev je še vedno
+# iskala neobstoječo pot ``app/frontend.html``, zaradi česar se je ob prvem
+# obisku vrnila napaka oziroma prazna stran. Usmerimo referenco na dejansko
+# datoteko.
+FRONTEND_PATH = PROJECT_ROOT / "modern_frontend.html"
 
 
 def build_homepage() -> str:
