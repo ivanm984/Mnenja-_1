@@ -70,13 +70,23 @@ GURS_API_KEY = os.getenv("GURS_API_KEY", None)
 
 # GURS URLs
 GURS_WMS_URL = os.getenv(
-    "GURS_WMS_URL", 
+    "GURS_WMS_URL",
+    "https://prostor.gov.si/wms"
+)
+
+GURS_RASTER_WMS_URL = os.getenv(
+    "GURS_RASTER_WMS_URL",
     "https://prostor3.gov.si/egp/services/javni/OGC_EPSG3857_RASTER/MapServer/WMSServer"
 )
 
 GURS_WFS_URL = os.getenv(
     "GURS_WFS_URL",
     "https://prostor3.gov.si/egp/services/javni/OGC_EPSG3857_VEKTORJI/MapServer/WFSServer"
+)
+
+GURS_GEOCODE_URL = os.getenv(
+    "GURS_GEOCODE_URL",
+    "https://prostor.gov.si/ows"
 )
 
 # Timeout za GURS API klice
@@ -115,22 +125,63 @@ GURS_WMS_LAYERS = {
     "ortofoto": {
         "name": "DOF",
         "title": "Digitalni ortofoto",
-        "description": "Ortofoto posnetek Slovenije"
-    },
-    "katastr": {
-        "name": "KN_ZK",
-        "title": "Katastrske meje",
-        "description": "Parcelne meje in številke"
+        "description": "Ortofoto posnetek Slovenije",
+        "url": GURS_RASTER_WMS_URL,
+        "format": "image/jpeg",
+        "transparent": False,
+        "category": "base",
+        "default_visible": True
     },
     "namenska_raba": {
         "name": "OPN_RABA",
         "title": "Namenska raba",
-        "description": "Prostorski načrt - namenska raba"
+        "description": "Prostorski načrt - namenska raba",
+        "url": GURS_WMS_URL,
+        "format": "image/png",
+        "transparent": True,
+        "category": "base",
+        "default_visible": False
+    },
+    "katastr": {
+        "name": "KN_ZK",
+        "title": "Parcelne meje",
+        "description": "Parcelne meje in številke",
+        "url": GURS_WMS_URL,
+        "format": "image/png",
+        "transparent": True,
+        "category": "overlay",
+        "default_visible": True,
+        "always_on": True
+    },
+    "stavbe": {
+        "name": "KN_SN",
+        "title": "Stavbni kataster",
+        "description": "Stavbe in objekti",
+        "url": GURS_WMS_URL,
+        "format": "image/png",
+        "transparent": True,
+        "category": "overlay",
+        "default_visible": False
     },
     "dtm": {
         "name": "DTM",
         "title": "Digitalni model terena",
-        "description": "Višinski podatki"
+        "description": "Višinski podatki",
+        "url": GURS_WMS_URL,
+        "format": "image/png",
+        "transparent": True,
+        "category": "overlay",
+        "default_visible": False
+    },
+    "poplavna": {
+        "name": "POP",
+        "title": "Poplavna območja",
+        "description": "Območja ogrožena s poplavami",
+        "url": GURS_WMS_URL,
+        "format": "image/png",
+        "transparent": True,
+        "category": "overlay",
+        "default_visible": False
     }
 }
 
@@ -185,6 +236,8 @@ __all__ = [
     # GURS
     "GURS_API_KEY",
     "GURS_WMS_URL",
+    "GURS_RASTER_WMS_URL",
+    "GURS_WFS_URL",
     "GURS_GEOCODE_URL",
     "GURS_API_TIMEOUT",
     "DEFAULT_MAP_CENTER",

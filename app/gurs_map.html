@@ -227,6 +227,70 @@
             background: rgba(99, 102, 241, 0.2);
         }
 
+        .layer-options {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .layer-divider {
+            margin-top: 0.75rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid var(--border);
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .layer-helper {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .layer-extra-list {
+            max-height: 200px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            padding-right: 0.25rem;
+        }
+
+        .layer-chip {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            padding: 0.5rem 0.75rem;
+            border-radius: 10px;
+            background: rgba(15, 23, 42, 0.7);
+            border: 1px solid var(--border);
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s;
+        }
+
+        .layer-chip:hover {
+            border-color: var(--primary);
+            background: rgba(99, 102, 241, 0.12);
+        }
+
+        .layer-chip span {
+            font-size: 0.85rem;
+        }
+
+        .layer-chip button {
+            background: transparent;
+            border: none;
+            color: var(--primary-light);
+            font-size: 0.75rem;
+            cursor: pointer;
+        }
+
+        .layer-chip button:hover {
+            color: var(--primary);
+        }
+
         .info-panel {
             display: flex;
             flex-direction: column;
@@ -374,20 +438,15 @@
                         </svg>
                         Sloji
                     </h3>
-                    
-                    <label class="layer-option active">
-                        <input type="radio" name="layer" value="ortofoto" checked onchange="changeLayer(this.value)">
-                        <span>📷 Ortofoto</span>
-                    </label>
-                    
-                    <label class="layer-option">
-                        <input type="radio" name="layer" value="namenska_raba" onchange="changeLayer(this.value)">
-                        <span>🏘️ Namenska raba</span>
-                    </label>
-                    
-                    <div style="margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); font-size: 0.8rem; color: var(--text-muted);">
-                        ✓ Katastrske meje vedno vidne
-                    </div>
+
+                    <div id="baseLayerOptions" class="layer-options"></div>
+
+                    <div class="layer-divider">Dodatni sloji</div>
+                    <div id="overlayLayerOptions" class="layer-options"></div>
+
+                    <div class="layer-divider" style="margin-top: 1rem;">Katalog WMS</div>
+                    <div id="capabilityStatus" class="layer-helper">Nalagam seznam slojev ...</div>
+                    <div id="capabilityLayers" class="layer-extra-list"></div>
                 </div>
 
                 <!-- Map -->
