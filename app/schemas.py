@@ -56,4 +56,12 @@ class AnalysisReportPayload(BaseModel):
     selected_ids: List[str] = Field(default_factory=list)
     existing_results_map: Dict[str, Any] = Field(default_factory=dict)
 
-__all__ = ["SaveSessionPayload", "ConfirmReportPayload", "KeyDataPayload", "AnalysisReportPayload"]
+
+class MapStatePayload(BaseModel):
+    """Shranjuje stanje pogleda zemljevida (lon/lat + zoom)."""
+    center_lon: float
+    center_lat: float
+    zoom: int
+
+
+__all__ = ["SaveSessionPayload", "ConfirmReportPayload", "KeyDataPayload", "AnalysisReportPayload", "MapStatePayload"]

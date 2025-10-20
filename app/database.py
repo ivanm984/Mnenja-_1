@@ -58,6 +58,15 @@ class DatabaseManager:
                     FOREIGN KEY (session_id) REFERENCES sessions (session_id) ON DELETE CASCADE
                 );
             """)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS map_states (
+                    session_id TEXT PRIMARY KEY,
+                    center_lon REAL NOT NULL,
+                    center_lat REAL NOT NULL,
+                    zoom INTEGER NOT NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
             await db.commit()
 
     async def upsert_session(self, session_id: str, project_name: str, summary: str, data: Dict[str, Any]):
@@ -104,6 +113,41 @@ class DatabaseManager:
             await db.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
             await db.execute("DELETE FROM revisions WHERE session_id = ?", (session_id,))
             await db.commit()
+
+    async def save_map_state(self, session_id: str, center_lon: float, center_lat: float, zoom: int):
+        """Shrani ali posodobi zadnjo lokacijo zemljevida za sejo."""
+        async with self._get_connection() as db:
+            await db.execute(
+                """
+                INSERT INTO map_states (session_id, center_lon, center_lat, zoom, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(session_id) DO UPDATE SET
+                    center_lon=excluded.center_lon,
+                    center_lat=excluded.center_lat,
+                    zoom=excluded.zoom,
+                    updated_at=excluded.updated_at;
+                """,
+                (session_id, center_lon, center_lat, zoom, datetime.utcnow()),
+            )
+            await db.commit()
+
+    async def fetch_map_state(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Vrne shranjeno lokacijo zemljevida za sejo, če obstaja."""
+        async with self._get_connection() as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT center_lon, center_lat, zoom, updated_at FROM map_states WHERE session_id = ?",
+                (session_id,),
+            )
+            row = await cursor.fetchone()
+            if row:
+                return {
+                    "center_lon": row["center_lon"],
+                    "center_lat": row["center_lat"],
+                    "zoom": row["zoom"],
+                    "updated_at": row["updated_at"],
+                }
+            return None
 
     async def record_revision(self, session_id: str, filenames: List[str], file_paths: List[str], requirement_id: str | None = None, note: str | None = None, mime_types: List[str] | None = None) -> Dict:
         """Zabeleži nov popravek v bazo."""
