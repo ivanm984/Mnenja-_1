@@ -71,22 +71,28 @@ GURS_API_KEY = os.getenv("GURS_API_KEY", None)
 # GURS URLs
 GURS_WMS_URL = os.getenv(
     "GURS_WMS_URL",
-    "https://prostor.gov.si/wms"
+    "https://ipi.eprostor.gov.si/wms-si-gurs-kn/wms"  # Kataster (KN) - za meje, št., stavbe, NEP_... sloje
 )
 
 GURS_RASTER_WMS_URL = os.getenv(
     "GURS_RASTER_WMS_URL",
-    "https://prostor3.gov.si/egp/services/javni/OGC_EPSG3857_RASTER/MapServer/WMSServer"
+    "https://ipi.eprostor.gov.si/wms-si-gurs-dts/wms" # Ortofoto (Digitalni Topo Sistem - DTS)
 )
 
 GURS_WFS_URL = os.getenv(
     "GURS_WFS_URL",
-    "https://prostor3.gov.si/egp/services/javni/OGC_EPSG3857_VEKTORJI/MapServer/WFSServer"
+    "https://ipi.eprostor.gov.si/wfs-si-gurs-kn/wfs"  # Kataster WFS (KN)
+)
+
+# URL za namensko rabo (Register Prostorskih Enot - RPE) - Ohranimo za vsak slučaj, čeprav ga zdaj ne rabimo za privzeti sloj
+GURS_RPE_WMS_URL = os.getenv(
+    "GURS_RPE_WMS_URL",
+    "https://ipi.eprostor.gov.si/wms-si-gurs-rpe/wms"
 )
 
 GURS_GEOCODE_URL = os.getenv(
     "GURS_GEOCODE_URL",
-    "https://prostor.gov.si/ows"
+    "https://prostor.gov.si/ows" # To je OK, ker povozi .env z https://storitve.eprostor.gov.si/kn/api
 )
 
 # Timeout za GURS API klice
@@ -96,88 +102,102 @@ GURS_API_TIMEOUT = float(os.getenv("GURS_API_TIMEOUT", "30"))
 # ZEMLJEVID NASTAVITVE
 # ==========================================
 
-# Privzete koordinate (Litija)
 DEFAULT_MAP_CENTER = (
     float(os.getenv("DEFAULT_MAP_CENTER_LON", "14.5058")),
     float(os.getenv("DEFAULT_MAP_CENTER_LAT", "46.0569"))
 )
-
 DEFAULT_MAP_ZOOM = int(os.getenv("DEFAULT_MAP_ZOOM", "14"))
 
 # ==========================================
 # FEATURE FLAGS
 # ==========================================
 
-# Ali je GURS zemljevid omogočen
 ENABLE_GURS_MAP = os.getenv("ENABLE_GURS_MAP", "true").lower() == "true"
-
-# Ali uporabljamo pravi GURS API ali simulirane podatke
 ENABLE_REAL_GURS_API = os.getenv("ENABLE_REAL_GURS_API", "false").lower() == "true"
-
-# Debug mode
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
 # ==========================================
-# GURS WMS SLOJI
+# GURS WMS SLOJI (POPRAVLJENO z NEP_ imeni)
 # ==========================================
 
 GURS_WMS_LAYERS = {
     "ortofoto": {
-        "name": "DOF",
+        "name": "SI.GURS.ZPDZ:DOF025",
         "title": "Digitalni ortofoto",
         "description": "Ortofoto posnetek Slovenije",
-        "url": GURS_RASTER_WMS_URL,
+        "url": GURS_RASTER_WMS_URL, # Pravilen URL (.../wms-si-gurs-dts/wms)
         "format": "image/jpeg",
         "transparent": False,
-        "category": "base",
-        "default_visible": True
+        "category": "base", # Osnovni sloj
+        "default_visible": True # Privzeto viden
+    },
+     "katastr": {
+        "name": "SI.GURS.KN:PARCELE", # Osnovne meje parcel
+        "title": "Parcelne meje",
+        "description": "Meje parcel iz katastra nepremičnin",
+        "url": GURS_WMS_URL, # Pravilen URL (.../wms-si-gurs-kn/wms)
+        "format": "image/png",
+        "transparent": True,
+        "category": "overlay", # Dodatni sloj
+        "default_visible": True, # Vedno viden
+        "always_on": True # Ne da se ga izklopiti
+    },
+    "katastr_stevilke": {
+        "name": "NEP_OSNOVNI_PARCELE_CENTROID", # <-- POPRAVLJENO IME za številke
+        "title": "Številke parcel",
+        "description": "Centroidi parcel s številkami",
+        "url": GURS_WMS_URL, # Pravilen URL (.../wms-si-gurs-kn/wms)
+        "format": "image/png",
+        "transparent": True,
+        "category": "overlay",
+        "default_visible": True, # Privzeto vidne
+        "always_on": False # Lahko se skrije
     },
     "namenska_raba": {
-        "name": "OPN_RABA",
+        "name": "NEP_OST_NAMENSKE_RABE",  # <-- POPRAVLJENO IME za namensko rabo
         "title": "Namenska raba",
-        "description": "Prostorski načrt - namenska raba",
-        "url": GURS_WMS_URL,
+        "description": "Namenska raba prostora (iz OPN)",
+        "url": GURS_WMS_URL, # <-- URL POPRAVLJEN na KN strežnik (ker je NEP_ sloj)
         "format": "image/png",
         "transparent": True,
-        "category": "base",
-        "default_visible": False
-    },
-    "katastr": {
-        "name": "KN_ZK",
-        "title": "Parcelne meje",
-        "description": "Parcelne meje in številke",
-        "url": GURS_WMS_URL,
-        "format": "image/png",
-        "transparent": True,
-        "category": "overlay",
-        "default_visible": True,
-        "always_on": True
+        "category": "overlay", # <-- SPREMENJENO V OVERLAY
+        "default_visible": False # Privzeto skrita
     },
     "stavbe": {
-        "name": "KN_SN",
+        "name": "SI.GURS.KN:STAVBE", # Osnovni podatki o stavbah
         "title": "Stavbni kataster",
-        "description": "Stavbe in objekti",
-        "url": GURS_WMS_URL,
+        "description": "Stavbe iz katastra nepremičnin",
+        "url": GURS_WMS_URL, # Pravilen URL (.../wms-si-gurs-kn/wms)
         "format": "image/png",
         "transparent": True,
         "category": "overlay",
         "default_visible": False
     },
+    # Primer dodatnega infrastrukturnega sloja (če ga najdete v katalogu)
+    # "infrastruktura_elektro": {
+    #     "name": "NEP_GJI_ELEKTRO", # IZMIŠLJENO IME - preverite v katalogu!
+    #     "title": "Elektro omrežje",
+    #     "description": "Podatki o elektroenergetskem omrežju",
+    #     "url": GURS_WMS_URL, # Verjetno KN strežnik
+    #     "format": "image/png",
+    #     "transparent": True,
+    #     "category": "overlay",
+    #     "default_visible": False
+    # },
+    # --- Ostali sloji, ki morda ne delujejo ---
     "dtm": {
-        "name": "DTM",
+        "name": "DTM", # Verjetno napačno ime
         "title": "Digitalni model terena",
-        "description": "Višinski podatki",
-        "url": GURS_WMS_URL,
+        "url": GURS_RASTER_WMS_URL,
         "format": "image/png",
         "transparent": True,
         "category": "overlay",
         "default_visible": False
     },
     "poplavna": {
-        "name": "POP",
+        "name": "POP", # Verjetno napačno ime
         "title": "Poplavna območja",
-        "description": "Območja ogrožena s poplavami",
-        "url": GURS_WMS_URL,
+        "url": GURS_WMS_URL, # Verjetno napačen URL/ime
         "format": "image/png",
         "transparent": True,
         "category": "overlay",
@@ -191,20 +211,21 @@ GURS_WMS_LAYERS = {
 
 def validate_gurs_config():
     """Preveri, če so GURS nastavitve pravilne."""
-    
     if ENABLE_REAL_GURS_API and not GURS_API_KEY:
         import warnings
         warnings.warn(
             "ENABLE_REAL_GURS_API=true ampak GURS_API_KEY ni nastavljen! "
-            "Pridobite API ključ na https://prostor.gov.si"
+            "Pridobite API ključ na https://www.e-prostor.gov.si/"
         )
-    
     if DEBUG:
         print(f"[GURS Config] Zemljevid: {'Omogočen' if ENABLE_GURS_MAP else 'Onemogočen'}")
         print(f"[GURS Config] Pravi API: {'Da' if ENABLE_REAL_GURS_API else 'Ne (simulacija)'}")
         print(f"[GURS Config] Center: {DEFAULT_MAP_CENTER}")
+        print(f"[GURS Config] KN WMS URL: {GURS_WMS_URL}")
+        print(f"[GURS Config] DTS WMS URL: {GURS_RASTER_WMS_URL}")
+        print(f"[GURS Config] RPE WMS URL: {GURS_RPE_WMS_URL}")
+        print(f"[GURS Config] KN WFS URL: {GURS_WFS_URL}")
 
-# Pokliči validacijo ob importu
 if ENABLE_GURS_MAP:
     validate_gurs_config()
 
@@ -213,37 +234,12 @@ if ENABLE_GURS_MAP:
 # ==========================================
 
 __all__ = [
-    # Gemini
-    "API_KEY",
-    "FAST_MODEL_NAME",
-    "POWERFUL_MODEL_NAME",
-    "GEN_CFG",
-    "GEMINI_ANALYSIS_CONCURRENCY",
-    
-    # Database
-    "DATABASE_URL",
-    "DEFAULT_SQLITE_PATH",
-    
-    # Municipality
-    "DEFAULT_MUNICIPALITY_SLUG",
-    "DEFAULT_MUNICIPALITY_NAME",
-    
-    # Paths
-    "PROJECT_ROOT",
-    "DATA_DIR",
-    "TEMP_STORAGE_PATH",
-    
-    # GURS
-    "GURS_API_KEY",
-    "GURS_WMS_URL",
-    "GURS_RASTER_WMS_URL",
-    "GURS_WFS_URL",
-    "GURS_GEOCODE_URL",
-    "GURS_API_TIMEOUT",
-    "DEFAULT_MAP_CENTER",
-    "DEFAULT_MAP_ZOOM",
-    "ENABLE_GURS_MAP",
-    "ENABLE_REAL_GURS_API",
-    "GURS_WMS_LAYERS",
-    "DEBUG",
+    "API_KEY", "FAST_MODEL_NAME", "POWERFUL_MODEL_NAME", "GEN_CFG", "GEMINI_ANALYSIS_CONCURRENCY",
+    "DATABASE_URL", "DEFAULT_SQLITE_PATH",
+    "DEFAULT_MUNICIPALITY_SLUG", "DEFAULT_MUNICIPALITY_NAME",
+    "PROJECT_ROOT", "DATA_DIR", "TEMP_STORAGE_PATH",
+    "GURS_API_KEY", "GURS_WMS_URL", "GURS_RASTER_WMS_URL", "GURS_RPE_WMS_URL",
+    "GURS_WFS_URL", "GURS_GEOCODE_URL", "GURS_API_TIMEOUT",
+    "DEFAULT_MAP_CENTER", "DEFAULT_MAP_ZOOM",
+    "ENABLE_GURS_MAP", "ENABLE_REAL_GURS_API", "GURS_WMS_LAYERS", "DEBUG",
 ]

@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GURS Zemljevid - Prikaz Parcel</title>
     
-    <!-- OpenLayers -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ol@v8.2.0/ol.css">
     <script src="https://cdn.jsdelivr.net/npm/ol@v8.2.0/dist/ol.js"></script>
     
@@ -218,6 +217,11 @@
             cursor: pointer;
             transition: background 0.2s;
         }
+        
+        /* Skrijemo privzeti radio/checkbox gumb */
+        .layer-option input {
+            display: none;
+        }
 
         .layer-option:hover {
             background: rgba(99, 102, 241, 0.1);
@@ -385,7 +389,6 @@
 </head>
 <body>
     <div class="container">
-        <!-- Header -->
         <div class="header">
             <div class="header-content">
                 <div>
@@ -407,11 +410,8 @@
             </div>
         </div>
 
-        <!-- Main Content -->
         <div class="main-content">
-            <!-- Map Panel -->
             <div class="map-panel">
-                <!-- Map Controls -->
                 <div class="map-controls">
                     <button class="control-btn" onclick="zoomIn()" title="Povečaj">
                         <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -430,7 +430,6 @@
                     </button>
                 </div>
 
-                <!-- Layer Selector -->
                 <div class="layer-selector">
                     <h3>
                         <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -444,18 +443,21 @@
                     <div class="layer-divider">Dodatni sloji</div>
                     <div id="overlayLayerOptions" class="layer-options"></div>
 
-                    <div class="layer-divider" style="margin-top: 1rem;">Katalog WMS</div>
-                    <div id="capabilityStatus" class="layer-helper">Nalagam seznam slojev ...</div>
-                    <div id="capabilityLayers" class="layer-extra-list"></div>
-                </div>
+                    <div class="layer-divider" style="margin-top: 1rem; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" id="toggleWmsCatalog">
+                        <span>Katalog WMS</span>
+                        <span id="toggleWmsBtn" style="color: var(--primary-light); font-size: 0.8rem; font-weight: 600;">Pokaži</span>
+                    </div>
+                    
+                    <div id="wmsCatalogContainer" style="display: none; margin-top: 0.75rem;">
+                        <div id="capabilityStatus" class="layer-helper">Nalagam seznam slojev ...</div>
+                        <div id="capabilityLayers" class="layer-extra-list"></div>
+                    </div>
+                    </div>
 
-                <!-- Map -->
                 <div id="map"></div>
             </div>
 
-            <!-- Info Panel -->
             <div class="info-panel">
-                <!-- Selected Parcel Info -->
                 <div class="info-card" id="parcelInfo" style="display: none;">
                     <h3>
                         <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -476,13 +478,11 @@
                     </div>
                 </div>
 
-                <!-- Parcel List -->
                 <div class="info-card" id="parcelList" style="display: none;">
                     <h3>Parcele iz projekta <span id="parcelCount"></span></h3>
                     <div id="parcelListContent"></div>
                 </div>
 
-                <!-- Instructions -->
                 <div class="instructions">
                     <h4>💡 Navodila</h4>
                     <ul>
