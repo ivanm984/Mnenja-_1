@@ -26,7 +26,21 @@ def generate_word_report(
     results_map: Dict[str, Dict[str, Any]],
     metadata: Dict[str, str],
     output_path: str,
+    report_format: str = "full",
 ) -> str:
+    """
+    Generira Word poročilo skladnosti.
+
+    Args:
+        zahteve: Seznam zahtev za preverjanje
+        results_map: Slovar z rezultati analize
+        metadata: Metapodatki projekta
+        output_path: Pot do izhodne datoteke
+        report_format: Format poročila - "full" (celotno besedilo členov) ali "summary" (samo naslovi)
+
+    Returns:
+        Pot do generirane datoteke
+    """
     doc = Document()
     section = doc.sections[0]
     section.orientation = WD_ORIENT.LANDSCAPE
@@ -70,6 +84,13 @@ def generate_word_report(
     p.add_run(f"{sklepni_status}").bold = True
     p.add_run(" s prostorskim aktom.")
 
+    # Dodaj številko zadeve če obstaja
+    stevilka_zadeve = metadata.get("stevilka_zadeve", "").strip()
+    if stevilka_zadeve:
+        p = doc.add_paragraph()
+        p.add_run("Številka zadeve: ").bold = True
+        p.add_run(stevilka_zadeve)
+
     if neskladja:
         p = doc.add_paragraph("Ugotovljena so bila neskladja v naslednjih točkah oziroma členih:")
         for tocka in neskladja:
@@ -111,7 +132,10 @@ def generate_word_report(
             pogoj_p = row_cells[0].paragraphs[0]
             naslov_run = pogoj_p.add_run(resolve_zahteva_label(zahteva))
             naslov_run.bold = True
-            pogoj_p.add_run(f"\n\n{zahteva.get('besedilo', 'Brez besedila')}")
+
+            # Če je format "summary", ne dodajamo celotnega besedila člena
+            if report_format == "full":
+                pogoj_p.add_run(f"\n\n{zahteva.get('besedilo', 'Brez besedila')}")
 
             obrazlozitev_p = row_cells[1].paragraphs[0]
             obrazlozitev_p.add_run("Obrazložitev:\n").bold = True

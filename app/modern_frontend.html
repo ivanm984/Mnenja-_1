@@ -369,6 +369,10 @@
                         </div>
                     </div>
                 </div>
+                <div class="form-group">
+                    <label class="form-label">Številka zadeve (opcijsko)</label>
+                    <input type="text" id="stevilka-zadeve" class="form-input" placeholder="npr. 351-123/2024">
+                </div>
                 <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
                     <div class="upload-icon">📄</div>
                     <h3>Povleci datoteke sem ali klikni za izbiro</h3>
@@ -438,6 +442,12 @@
                 </table>
                 <div class="actions-bar">
                     <button class="btn btn-secondary" onclick="app.resetAnalysis()">🔄 Nova Analiza</button>
+                    <div style="display: flex; align-items: center; gap: 1rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 0.75rem 1.25rem;">
+                        <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                            <input type="checkbox" id="report-format-summary" style="width: 18px; height: 18px; cursor: pointer;">
+                            <span style="font-weight: 600; font-size: 0.9rem;">Skrajšana verzija (samo naslovi členov)</span>
+                        </label>
+                    </div>
                     <button class="btn btn-primary" onclick="app.downloadReport()">📥 Prenesi Poročilo</button>
                 </div>
             </div>
@@ -1520,13 +1530,13 @@
                     this.showToast('error', 'Napaka', 'Seja ni aktivna');
                     return;
                 }
-                
+
                 if (this.hasUnsavedChanges) {
                     await this.saveProgress();
                 }
-                
+
                 this.showLoading('Pripravljam poročilo z vašimi spremembami...');
-                
+
                 try {
                     const updatedResults = {};
                     this.results.forEach(result => {
@@ -1537,11 +1547,20 @@
                         };
                     });
 
+                    // Preberi izbiro formata poročila
+                    const isSummary = document.getElementById('report-format-summary')?.checked || false;
+                    const reportFormat = isSummary ? 'summary' : 'full';
+
+                    // Preberi številko zadeve
+                    const stevilkaZadeve = document.getElementById('stevilka-zadeve')?.value?.trim() || null;
+
                     const payload = {
                         session_id: this.sessionId,
                         excluded_ids: [],
                         updated_results_map: updatedResults,
-                        updated_key_data: this.keyData
+                        updated_key_data: this.keyData,
+                        report_format: reportFormat,
+                        stevilka_zadeve: stevilkaZadeve
                     };
                     
                     const response = await fetch('/confirm-report', {

@@ -593,12 +593,16 @@ async def confirm_report(
 
     excluded_ids = set(payload.excluded_ids or [])
     filtered_zahteve = [z for z in cache.get("zahteve", []) if z.get("id") not in excluded_ids]
-    
+
     reports_dir = Path("reports")
     reports_dir.mkdir(exist_ok=True)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
     metadata = cache.get("metadata", {})
+
+    # Dodaj številko zadeve v metadata če je bila podana
+    if payload.stevilka_zadeve:
+        metadata["stevilka_zadeve"] = payload.stevilka_zadeve.strip()
     investor_name = (metadata.get("investitor") or "").strip()
     if investor_name:
         safe_investor = re.sub(r"\s+", "_", investor_name, flags=re.UNICODE)
@@ -616,9 +620,11 @@ async def confirm_report(
     xlsx_output = reports_dir / f"Priloga10A_{timestamp}.xlsx"
 
     try:
+        # Generiraj Word poročilo s formatom (full ali summary)
+        report_format = payload.report_format if payload.report_format in ["full", "summary"] else "full"
         docx_path = await asyncio.to_thread(
             generate_word_report,
-            filtered_zahteve, cache.get("results_map", {}), metadata, str(docx_output)
+            filtered_zahteve, cache.get("results_map", {}), metadata, str(docx_output), report_format
         )
         xlsx_path = await asyncio.to_thread(
             generate_priloga_10a,

@@ -19,6 +19,8 @@ class ConfirmReportPayload(BaseModel):
     excluded_ids: Optional[List[str]] = Field(default_factory=list)
     updated_results_map: Dict[str, Any] = Field(default_factory=dict)
     updated_key_data: Dict[str, Any] = Field(default_factory=dict)
+    report_format: str = Field(default="full", description="Format poročila: 'full' ali 'summary'")
+    stevilka_zadeve: Optional[str] = Field(default=None, description="Številka zadeve")
 
 
 class KeyDataPayload(BaseModel):
