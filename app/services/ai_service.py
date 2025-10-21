@@ -30,8 +30,15 @@ class AIService:
     """Servis za AI analize z Gemini API."""
 
     def __init__(self):
-        """Inicializacija AI serviса z modeli."""
-        self._fast_json_config = {"response_mime_type": "application/json"}
+        """Inicializacija AI servisa z modeli."""
+        # Konfiguracija za hitri model z JSON output
+        self._fast_json_config = {
+            "temperature": 0.0,
+            "top_p": 0.9,
+            "top_k": 40,
+            "max_output_tokens": 8192,
+            "response_mime_type": "application/json",
+        }
         self._fast_json_model = genai.GenerativeModel(
             FAST_MODEL_NAME, generation_config=self._fast_json_config
         )
