@@ -236,7 +236,10 @@ async def _fetch_parcel_features(parcel_no: str, ko_hint: Optional[str]) -> List
         
     full_cql_filter = " AND ".join(cql_filter_parts)
 
-    type_names = ["SI.GURS.KN:PARCELE"]
+    # ✅ POPRAVLJENO: WFS sloj ima končnico _TABELA
+    # WMS sloji: SI.GURS.KN:PARCELE (brez _TABELA)
+    # WFS sloji: SI.GURS.KN:PARCELE_TABELA (z _TABELA)
+    type_names = ["SI.GURS.KN:PARCELE_TABELA"]
 
     async with httpx.AsyncClient(timeout=GURS_API_TIMEOUT) as client:
         for type_name in type_names:
