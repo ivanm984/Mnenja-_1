@@ -8,19 +8,21 @@ from typing import Any, Dict, Optional
 import redis.asyncio as redis
 from redis.asyncio.connection import ConnectionPool
 
+from .config import REDIS_URL, SESSION_TTL_SECONDS
+
 # Ustvarimo eno samo povezavo, ki jo bo uporabljala celotna aplikacija.
 # To je veliko bolj učinkovito kot ustvarjanje nove povezave ob vsakem klicu.
-pool = ConnectionPool.from_url("redis://localhost:6379/0", decode_responses=True)
+pool = ConnectionPool.from_url(REDIS_URL, decode_responses=True)
 
 
 class CacheManager:
     """Asinhroni upravitelj za shranjevanje in pridobivanje podatkov iz Redisa."""
 
-    def __init__(self, connection_pool: ConnectionPool, default_ttl: int = 3600):
+    def __init__(self, connection_pool: ConnectionPool, default_ttl: int = SESSION_TTL_SECONDS):
         """
         Args:
             connection_pool: Povezava do Redis strežnika.
-            default_ttl: Privzeti čas veljavnosti ključa v sekundah (1 ura).
+            default_ttl: Privzeti čas veljavnosti ključa v sekundah.
         """
         self.client = redis.Redis(connection_pool=connection_pool)
         self.ttl = default_ttl
