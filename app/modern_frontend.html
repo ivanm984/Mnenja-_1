@@ -208,7 +208,21 @@
         .requirement-text:hover { color: var(--primary-dark); }
         .truncated { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; }
         
-        .actions-bar { display: flex; gap: 1rem; margin-top: 2rem; flex-wrap: wrap; }
+        .actions-bar { display: flex; gap: 1rem; margin-top: 2rem; flex-wrap: wrap; align-items: center; }
+
+        /* PDF Dropdown */
+        .pdf-dropdown { position: relative; display: inline-block; }
+        .pdf-dropdown-btn { display: flex; align-items: center; gap: 0.5rem; }
+        .pdf-dropdown-content { display: none; position: absolute; bottom: 100%; left: 0; margin-bottom: 0.5rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3); min-width: 280px; max-width: 400px; z-index: 1000; max-height: 300px; overflow-y: auto; }
+        .pdf-dropdown.open .pdf-dropdown-content { display: block; animation: slideUp 0.2s ease-out; }
+        .pdf-dropdown-item { padding: 0.75rem 1rem; cursor: pointer; transition: background 0.2s; display: flex; align-items: center; gap: 0.75rem; border-bottom: 1px solid var(--border); }
+        .pdf-dropdown-item:last-child { border-bottom: none; }
+        .pdf-dropdown-item:hover { background: rgba(99, 102, 241, 0.1); }
+        .pdf-dropdown-item-icon { font-size: 1.2rem; }
+        .pdf-dropdown-item-text { flex: 1; }
+        .pdf-dropdown-item-name { font-weight: 600; color: var(--text); font-size: 0.9rem; }
+        .pdf-dropdown-item-size { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.15rem; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         
         .toast { position: fixed; bottom: 2rem; right: 2rem; backdrop-filter: blur(20px); background: var(--bg-glass); border: 1px solid var(--border); border-radius: 16px; padding: 1.25rem 1.5rem; box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.2); max-width: 400px; z-index: 1001; opacity: 0; transform: translateX(100px); transition: all 0.4s ease; }
         .toast.show { opacity: 1; transform: translateX(0); }
@@ -363,7 +377,12 @@
                 </div>
                 <div class="file-list" id="file-list"></div>
                 <div class="actions-bar">
-                    <button class="btn btn-secondary" id="pdf-preview-btn" onclick="app.openFirstPdfViewer()" disabled style="display: none;">👁️ PDF Predogled</button>
+                    <div class="pdf-dropdown" id="pdf-dropdown" style="display: none;">
+                        <button class="btn btn-secondary pdf-dropdown-btn" id="pdf-preview-btn" onclick="app.togglePdfDropdown()">
+                            👁️ PDF Predogled <span id="pdf-dropdown-arrow">▼</span>
+                        </button>
+                        <div class="pdf-dropdown-content" id="pdf-dropdown-content"></div>
+                    </div>
                     <button class="btn btn-primary" id="extract-btn" onclick="app.extractData()" disabled>🚀 Začni Analizo</button>
                 </div>
             </div>
@@ -752,18 +771,75 @@
             },
 
             updatePdfPreviewButton() {
-                const pdfPreviewBtn = document.getElementById('pdf-preview-btn');
-                const hasPdf = this.files.some(file => file.type === 'application/pdf');
+                const pdfDropdown = document.getElementById('pdf-dropdown');
+                const pdfFiles = this.files.filter(file => file.type === 'application/pdf');
 
-                if (pdfPreviewBtn) {
-                    if (hasPdf) {
-                        pdfPreviewBtn.style.display = 'inline-block';
-                        pdfPreviewBtn.disabled = false;
+                if (pdfDropdown) {
+                    if (pdfFiles.length > 0) {
+                        pdfDropdown.style.display = 'inline-block';
+                        this.renderPdfDropdown();
                     } else {
-                        pdfPreviewBtn.style.display = 'none';
-                        pdfPreviewBtn.disabled = true;
+                        pdfDropdown.style.display = 'none';
                     }
                 }
+            },
+
+            togglePdfDropdown() {
+                const dropdown = document.getElementById('pdf-dropdown');
+                const isOpen = dropdown.classList.contains('open');
+
+                if (isOpen) {
+                    this.closePdfDropdown();
+                } else {
+                    dropdown.classList.add('open');
+                    // Zapri dropdown če klikneš kjerkoli drugje
+                    setTimeout(() => {
+                        document.addEventListener('click', this.handleOutsideClick.bind(this), { once: true });
+                    }, 100);
+                }
+            },
+
+            closePdfDropdown() {
+                const dropdown = document.getElementById('pdf-dropdown');
+                if (dropdown) {
+                    dropdown.classList.remove('open');
+                }
+            },
+
+            handleOutsideClick(event) {
+                const dropdown = document.getElementById('pdf-dropdown');
+                if (dropdown && !dropdown.contains(event.target)) {
+                    this.closePdfDropdown();
+                }
+            },
+
+            renderPdfDropdown() {
+                const content = document.getElementById('pdf-dropdown-content');
+                if (!content) return;
+
+                const pdfFiles = this.files
+                    .map((file, index) => ({ file, index }))
+                    .filter(item => item.file.type === 'application/pdf');
+
+                if (pdfFiles.length === 0) {
+                    content.innerHTML = '<div style="padding: 1rem; text-align: center; color: var(--text-muted);">Ni PDF dokumentov</div>';
+                    return;
+                }
+
+                content.innerHTML = pdfFiles.map(({ file, index }) => `
+                    <div class="pdf-dropdown-item" onclick="app.selectPdfFromDropdown(${index}); event.stopPropagation();">
+                        <div class="pdf-dropdown-item-icon">📄</div>
+                        <div class="pdf-dropdown-item-text">
+                            <div class="pdf-dropdown-item-name" title="${file.name}">${file.name.length > 35 ? file.name.substring(0, 35) + '...' : file.name}</div>
+                            <div class="pdf-dropdown-item-size">${this.formatFileSize(file.size)}</div>
+                        </div>
+                    </div>
+                `).join('');
+            },
+
+            selectPdfFromDropdown(index) {
+                this.closePdfDropdown();
+                this.openPdfViewer(index);
             },
 
             updatePages(fileName, pages) { if (this.filesMeta[fileName]) this.filesMeta[fileName].pages = pages; },
@@ -1048,15 +1124,6 @@
                 } else {
                     this.showToast('error', 'Napaka', 'Ni mogoče odpreti tiskalnika');
                     URL.revokeObjectURL(fileUrl);
-                }
-            },
-
-            openFirstPdfViewer() {
-                const firstPdfIndex = this.files.findIndex(file => file.type === 'application/pdf');
-                if (firstPdfIndex !== -1) {
-                    this.openPdfViewer(firstPdfIndex);
-                } else {
-                    this.showToast('info', 'Ni PDF-ja', 'Ni PDF dokumentov za predogled');
                 }
             },
 
