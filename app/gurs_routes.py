@@ -114,10 +114,15 @@ def extract_parcels_from_session(session_data: Dict[str, Any]) -> List[Dict[str,
     logger.info(f"[GURS] Parsana skupna velikost: {velikost_int} m²")
     parcela_numbers = []
     if vse_parcele_str:
-        parcele_brez_ko = re.sub(r"k\.?o\.?.*", "", vse_parcele_str, flags=re.IGNORECASE).strip(); logger.debug(f"[GURS] Parcele brez K.O.: '{parcele_brez_ko}'")
+        parcele_brez_ko = re.sub(r"k\.?o\.?.*", "", vse_parcele_str, flags=re.IGNORECASE).strip()
+        logger.debug(f"[GURS] Parcele brez K.O.: '{parcele_brez_ko}'")
         raw_parts = re.split(r'[,;\s]+', parcele_brez_ko)
-        for p in raw_parts: p_clean = p.strip();
-        if p_clean and re.search(r'\d', p_clean): p_final = re.match(r'^([\d/]+)', p_clean); parcela_numbers.append(p_final.group(1)) if p_final else None
+        for p in raw_parts:
+            p_clean = p.strip()
+            if p_clean and re.search(r'\d', p_clean):
+                p_final = re.match(r'^([\d/]+)', p_clean)
+                if p_final:
+                    parcela_numbers.append(p_final.group(1))
         parcela_numbers = [p for p in parcela_numbers if p] 
     logger.info(f"[GURS] Najdene parcele iz 'vse parcele': {parcela_numbers}")
     if parcela_numbers:
@@ -128,9 +133,13 @@ def extract_parcels_from_session(session_data: Dict[str, Any]) -> List[Dict[str,
         if gradbena_match: parcela_num = gradbena_match.group(1); logger.info(f"[GURS] Uporabljam gradbeno parcelo: '{parcela_num}'"); parcels.append({"stevilka": parcela_num, "katastrska_obcina": katastrska_obcina, "povrsina": velikost_int, "namenska_raba": namenska_raba})
         else: logger.warning(f"[GURS] Gradbena parcela '{gradbena_parcela}' nima prepoznavne številke.")
     unique_parcels, seen = [], set()
-    for p in parcels: key = (p.get('stevilka'), p.get('katastrska_obcina'));
-    if key not in seen: unique_parcels.append(p); seen.add(key)
-    else: logger.debug(f"[GURS] Odstranjen duplikat: {p.get('stevilka')} KO: {p.get('katastrska_obcina')}")
+    for p in parcels:
+        key = (p.get('stevilka'), p.get('katastrska_obcina'))
+        if key not in seen:
+            unique_parcels.append(p)
+            seen.add(key)
+        else:
+            logger.debug(f"[GURS] Odstranjen duplikat: {p.get('stevilka')} KO: {p.get('katastrska_obcina')}")
     logger.info(f"[GURS] === Končni seznam parcel: {len(unique_parcels)} ===")
     for i, p in enumerate(unique_parcels, 1): logger.info(f"[GURS] Parcela {i}: {p.get('stevilka')} (KO: {p.get('katastrska_obcina') or 'N/A'}) Pov.: {p.get('povrsina')}")
     return unique_parcels
