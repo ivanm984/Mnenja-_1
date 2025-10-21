@@ -11,14 +11,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-from fastapi import (APIRouter, BackgroundTasks, File, Form, HTTPException,
-                   UploadFile)
+from fastapi import (APIRouter, BackgroundTasks, Depends, File, Form,
+                   HTTPException, UploadFile)
 from fastapi.responses import FileResponse, HTMLResponse
 
-from .ai import (call_gemini_async, call_gemini_for_details_async,
-                 call_gemini_for_key_data_async,
-                 call_gemini_for_metadata_async, parse_ai_response)
 from .cache import cache_manager
+from .config import ANALYSIS_CHUNK_SIZE
 from .database import compute_session_summary, db_manager
 from .files import save_revision_files
 from .forms import generate_priloga_10a
@@ -28,12 +26,14 @@ from .knowledge_base import (
     get_izrazi_text,
     get_uredba_text,
 )
+from .middleware import verify_api_key
 from .municipalities import get_municipality_profile
 from .parsers import convert_pdf_pages_to_images, parse_pdf
 from .prompts import build_prompt
 from .reporting import generate_word_report
 from .schemas import (AnalysisReportPayload, ConfirmReportPayload,
                     SaveSessionPayload)
+from .services import PDFService, ai_service
 from .temp_storage import (cleanup_session_storage, load_images_from_paths,
                            save_images_for_session)
 from .utils import infer_project_name
@@ -41,12 +41,47 @@ from .utils import infer_project_name
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-ANALYSIS_CHUNK_SIZE = 15
-
 def chunk_list(data: List[Any], size: int) -> Iterable[List[Any]]:
-    """Pomožna funkcija za razdelitev seznama v manjše sklope."""
+    """
+    Razdeli seznam v manjše sklope.
+
+    Args:
+        data: Seznam za razdelitev
+        size: Velikost vsakega sklopa
+
+    Yields:
+        Sklope seznama
+    """
     for i in range(0, len(data), size):
         yield data[i : i + size]
+
+
+def _parse_files_metadata(files_meta_json: Optional[str]) -> Dict[str, str]:
+    """
+    Parsira JSON metapodatke datotek.
+
+    Args:
+        files_meta_json: JSON string z metapodatki
+
+    Returns:
+        Dict[filename -> pages]
+    """
+    page_overrides: Dict[str, str] = {}
+    if not files_meta_json:
+        return page_overrides
+
+    try:
+        parsed = json.loads(files_meta_json)
+        if isinstance(parsed, list):
+            for entry in parsed:
+                if isinstance(entry, dict):
+                    name, pages = entry.get("name"), entry.get("pages")
+                    if name and isinstance(pages, str) and pages.strip():
+                        page_overrides[name] = pages.strip()
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.warning(f"Neveljaven files_meta_json: {e}")
+
+    return page_overrides
 
 @router.get("/", response_class=HTMLResponse)
 async def frontend() -> str:
@@ -108,76 +143,64 @@ async def extract_data(
     pdf_files: List[UploadFile] = File(...),
     files_meta_json: Optional[str] = Form(None),
     municipality_slug: Optional[str] = Form(None),
+    api_key: str = Depends(verify_api_key),
 ):
+    """
+    Ekstrahira podatke iz naloženih PDF datotek in izvede začetno AI analizo.
+
+    Args:
+        pdf_files: Seznam PDF datotek za analizo
+        files_meta_json: Opcijski JSON z metapodatki (strani za pretvorbo)
+        municipality_slug: Oznaka občine (privzeto iz config)
+        api_key: API ključ za avtentikacijo
+
+    Returns:
+        Dict z ekstrahiranimi podatki: session_id, eup, namenska_raba, metadata
+
+    Raises:
+        HTTPException(400): Če datoteke ne vsebujejo besedila ali so neveljavne
+        HTTPException(401): Če API ključ ni veljaven
+        HTTPException(500): Če AI analiza ne uspe
+    """
     start_time = time.perf_counter()
     session_id = str(start_time)
-    logger.info(
-        f"[{session_id}] Začetek procesa /extract-data z {len(pdf_files)} datotekami."
+    logger.info(f"[{session_id}] Začetek /extract-data z {len(pdf_files)} datotekami")
+
+    # Parsiranje metapodatkov
+    page_overrides = _parse_files_metadata(files_meta_json)
+
+    # Obdelava PDF datotek
+    project_text, all_images, files_manifest = await PDFService.process_pdf_files(
+        pdf_files, page_overrides, session_id
     )
 
-    page_overrides: Dict[str, str] = {}
-    if files_meta_json:
-        try:
-            parsed = json.loads(files_meta_json)
-            if isinstance(parsed, list):
-                for entry in parsed:
-                    if isinstance(entry, dict):
-                        name, pages = entry.get("name"), entry.get("pages")
-                        if name and isinstance(pages, str) and pages.strip():
-                            page_overrides[name] = pages.strip()
-        except (json.JSONDecodeError, ValueError):
-            logger.warning(f"[{session_id}] Neveljaven files_meta_json, ignoriram.")
-
-    combined_text_parts, all_images, files_manifest = [], [], []
-    for upload in pdf_files:
-        pdf_bytes = await upload.read()
-        if not pdf_bytes: continue
-        file_label = upload.filename or "Dokument.pdf"
-        text = await asyncio.to_thread(parse_pdf, pdf_bytes)
-        if text: combined_text_parts.append(f"=== VIR: {file_label} ===\n{text}")
-
-        page_hint = page_overrides.get(file_label)
-        if page_hint:
-            try:
-                images = await asyncio.to_thread(
-                    convert_pdf_pages_to_images, pdf_bytes, page_hint
-                )
-                all_images.extend(images)
-            except Exception as e:
-                logger.warning(f"[{session_id}] Napaka pri pretvorbi slik za {file_label}: {e}")
-        
-        files_manifest.append({"filename": file_label, "pages": page_hint or "", "size": len(pdf_bytes)})
-
-    if not combined_text_parts:
-        raise HTTPException(status_code=400, detail="Iz naloženih datotek ni bilo mogoče prebrati besedila.")
-
+    # Shranjevanje slik
     image_paths = await save_images_for_session(session_id, all_images)
-    project_text = "\n\n".join(combined_text_parts)
 
+    # Pridobitev profila občine
     profile = get_municipality_profile(municipality_slug)
 
-    logger.info(
-        f"[{session_id}] Začenjam vzporedne klice na Gemini API za občino {profile.slug}..."
-    )
+    logger.info(f"[{session_id}] Začenjam vzporedne AI klice za občino {profile.slug}")
     gemini_start_time = time.perf_counter()
 
-    details_task = call_gemini_for_details_async(project_text, all_images)
-    metadata_task = call_gemini_for_metadata_async(project_text)
-    key_data_task = call_gemini_for_key_data_async(project_text, all_images)
-
+    # Vzporedni AI klici
     ai_details, metadata, key_data = await asyncio.gather(
-        details_task, metadata_task, key_data_task
+        ai_service.extract_eup_and_raba(project_text, all_images),
+        ai_service.extract_metadata(project_text),
+        ai_service.extract_key_data(project_text, all_images),
     )
 
     gemini_duration = time.perf_counter() - gemini_start_time
-    logger.info(f"[{session_id}] Klici na Gemini API končani v {gemini_duration:.2f} sekundah.")
+    logger.info(f"[{session_id}] AI klici končani v {gemini_duration:.2f}s")
 
+    # Združitev metapodatkov
     merged_metadata = {**profile.default_metadata, **metadata}
     investor_name = (merged_metadata.get("investitor") or "").strip()
     investor_address = (merged_metadata.get("investitor_naslov") or "").strip()
     merged_metadata["investitor1_ime"] = investor_name
     merged_metadata["investitor1_naslov"] = investor_address
 
+    # Shranjevanje seje
     session_data = {
         "project_text": project_text,
         "image_paths": image_paths,
@@ -190,6 +213,7 @@ async def extract_data(
     }
     await cache_manager.store_session_data(session_id, session_data)
 
+    # Priprava odgovora
     response_data = {
         "session_id": session_id,
         "municipality_slug": profile.slug,
@@ -201,14 +225,32 @@ async def extract_data(
     }
 
     total_duration = time.perf_counter() - start_time
-    logger.info(f"[{session_id}] Celoten proces /extract-data je trajal {total_duration:.2f} sekund.")
+    logger.info(f"[{session_id}] Proces končan v {total_duration:.2f}s")
     return response_data
 
 @router.post("/analyze-report")
-async def analyze_report(payload: AnalysisReportPayload):
+async def analyze_report(
+    payload: AnalysisReportPayload,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Izvede podrobno analizo skladnosti zahtev.
+
+    Args:
+        payload: Podatki za analizo (EUP, raba, ključni podatki, izbrane zahteve)
+        api_key: API ključ za avtentikacijo
+
+    Returns:
+        Dict z rezultati analize
+
+    Raises:
+        HTTPException(400): Če manjkajo potrebni podatki
+        HTTPException(404): Če seja ne obstaja
+        HTTPException(500): Če AI analiza ne uspe
+    """
     start_time = time.perf_counter()
     session_id = payload.session_id
-    logger.info(f"[{session_id}] Začetek procesa /analyze-report s Pydantic modelom.")
+    logger.info(f"[{session_id}] Začetek /analyze-report")
     
     data = await cache_manager.retrieve_session_data(session_id)
     if not data:
@@ -271,25 +313,25 @@ async def analyze_report(payload: AnalysisReportPayload):
             uredba_text,
             municipality_profile=municipality_profile,
         )
-        task = call_gemini_async(prompt, images_for_analysis)
+        task = ai_service.analyze_compliance(prompt, images_for_analysis)
         tasks.append(task)
     
-    logger.info(f"[{session_id}] Začenjam {len(tasks)} vzporednih klicev na Gemini za analizo...")
+    logger.info(f"[{session_id}] Začenjam {len(tasks)} vzporednih AI klicev")
     gemini_start_time = time.perf_counter()
     ai_responses = await asyncio.gather(*tasks, return_exceptions=True)
     gemini_duration = time.perf_counter() - gemini_start_time
-    logger.info(f"[{session_id}] Vzporedna analiza končana v {gemini_duration:.2f} sekundah.")
+    logger.info(f"[{session_id}] AI analiza končana v {gemini_duration:.2f}s")
 
     combined_results_map = {**payload.existing_results_map}
     for response_obj, chunk in zip(ai_responses, zahteve_chunks):
         if isinstance(response_obj, Exception):
-            logger.error(f"[{session_id}] Klic na Gemini za en sklop ni uspel: {response_obj}")
+            logger.error(f"[{session_id}] AI klic za sklop ni uspel: {response_obj}")
             continue
         try:
-            chunk_results = parse_ai_response(response_obj, chunk)
+            chunk_results = ai_service.parse_ai_response(response_obj, chunk)
             combined_results_map.update(chunk_results)
         except HTTPException as e:
-            logger.error(f"[{session_id}] Napaka pri obdelavi enega od sklopov: {e.detail}")
+            logger.error(f"[{session_id}] Napaka pri parsiranju: {e.detail}")
 
     non_compliant_ids = [k for k, v in combined_results_map.items() if "nesklad" in v.get("skladnost", "").lower()]
     revisions = await db_manager.fetch_revisions(session_id)
@@ -310,11 +352,14 @@ async def analyze_report(payload: AnalysisReportPayload):
     await cache_manager.store_session_data(f"report:{session_id}", final_report_data)
 
     total_duration = time.perf_counter() - start_time
-    logger.info(f"[{session_id}] Celoten proces /analyze-report je trajal {total_duration:.2f} sekund.")
+    logger.info(f"[{session_id}] Proces končan v {total_duration:.2f}s")
 
     return {
-        "status": "success", "results_map": combined_results_map, "zahteve": zahteve,
-        "non_compliant_ids": non_compliant_ids, "requirement_revisions": requirement_revisions,
+        "status": "success",
+        "results_map": combined_results_map,
+        "zahteve": zahteve,
+        "non_compliant_ids": non_compliant_ids,
+        "requirement_revisions": requirement_revisions,
     }
 
 @router.post("/upload-revision")
@@ -324,8 +369,23 @@ async def upload_revision(
     revision_files: List[UploadFile] = File(...),
     note: Optional[str] = Form(None),
     revision_pages: Optional[str] = Form(None),
+    api_key: str = Depends(verify_api_key),
 ):
-    logger.info(f"[{session_id}] Sprejemam popravljeno dokumentacijo za dodatno analizo.")
+    """
+    Naloži popravljeno dokumentacijo za ponovno analizo.
+
+    Args:
+        session_id: ID seje
+        requirement_ids: JSON seznam ID-jev zahtev za ponovno analizo
+        revision_files: Seznam popravljenih PDF datotek
+        note: Opcijska opomba
+        revision_pages: JSON z oznakami strani
+        api_key: API ključ za avtentikacijo
+
+    Returns:
+        Dict z statusom in podatki o reviziji
+    """
+    logger.info(f"[{session_id}] Sprejemam popravljeno dokumentacijo")
 
     session_data = await cache_manager.retrieve_session_data(session_id)
     if not session_data:
@@ -443,9 +503,24 @@ async def upload_revision(
     }
 
 @router.post("/confirm-report")
-async def confirm_report(payload: ConfirmReportPayload, background_tasks: BackgroundTasks):
+async def confirm_report(
+    payload: ConfirmReportPayload,
+    background_tasks: BackgroundTasks,
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Potrdi analizo in generiraj Word/Excel poročila.
+
+    Args:
+        payload: Podatki za generiranje poročila
+        background_tasks: FastAPI background tasks za cleanup
+        api_key: API ključ za avtentikacijo
+
+    Returns:
+        Dict s potmi do generiranih datotek
+    """
     session_id = payload.session_id
-    logger.info(f"[{session_id}] Začetek procesa /confirm-report in generiranje poročil.")
+    logger.info(f"[{session_id}] Začetek /confirm-report in generiranje poročil")
 
     cache_key = f"report:{session_id}"
     cache = await cache_manager.retrieve_session_data(cache_key)

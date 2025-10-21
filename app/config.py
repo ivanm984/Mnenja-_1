@@ -47,6 +47,39 @@ if not DATABASE_URL:
 DEFAULT_SQLITE_PATH = PROJECT_ROOT / "local_sessions.db"
 
 # ==========================================
+# SECURITY NASTAVITVE
+# ==========================================
+
+# API Keys za avtentikacijo
+API_KEYS_RAW = os.environ.get("API_KEYS", "")
+VALID_API_KEYS = set(key.strip() for key in API_KEYS_RAW.split(",") if key.strip())
+
+if not VALID_API_KEYS and not DEBUG:
+    raise RuntimeError("❌ API_KEYS manjka v .env datoteki!")
+
+# CORS nastavitve
+ALLOWED_ORIGINS_RAW = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000")
+ALLOWED_ORIGINS = [origin.strip() for origin in ALLOWED_ORIGINS_RAW.split(",") if origin.strip()]
+
+# Rate limiting
+RATE_LIMIT_PER_MINUTE = int(os.environ.get("RATE_LIMIT_PER_MINUTE", "10"))
+
+# ==========================================
+# REDIS NASTAVITVE
+# ==========================================
+
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+SESSION_TTL_SECONDS = int(os.environ.get("SESSION_TTL_SECONDS", "3600"))
+
+# ==========================================
+# FILE PROCESSING NASTAVITVE
+# ==========================================
+
+MAX_PDF_SIZE_MB = int(os.environ.get("MAX_PDF_SIZE_MB", "50"))
+MAX_PDF_SIZE_BYTES = MAX_PDF_SIZE_MB * 1024 * 1024
+ANALYSIS_CHUNK_SIZE = int(os.environ.get("ANALYSIS_CHUNK_SIZE", "15"))
+
+# ==========================================
 # MUNICIPALITY NASTAVITVE
 # ==========================================
 
@@ -242,4 +275,7 @@ __all__ = [
     "GURS_WFS_URL", "GURS_GEOCODE_URL", "GURS_API_TIMEOUT",
     "DEFAULT_MAP_CENTER", "DEFAULT_MAP_ZOOM",
     "ENABLE_GURS_MAP", "ENABLE_REAL_GURS_API", "GURS_WMS_LAYERS", "DEBUG",
+    "VALID_API_KEYS", "ALLOWED_ORIGINS", "RATE_LIMIT_PER_MINUTE",
+    "REDIS_URL", "SESSION_TTL_SECONDS",
+    "MAX_PDF_SIZE_MB", "MAX_PDF_SIZE_BYTES", "ANALYSIS_CHUNK_SIZE",
 ]
