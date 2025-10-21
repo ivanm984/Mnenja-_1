@@ -176,25 +176,32 @@ GURS_WMS_LAYERS = {
         "always_on": True # Ne da se ga izklopiti
     },
     "katastr_stevilke": {
-        "name": "NEP_OSNOVNI_PARCELE_CENTROID", # <-- POPRAVLJENO IME za številke
+        # OPOMBA: Številke parcel so lahko prikazane preko GetFeatureInfo
+        # Nekateri strežniki imajo posebne sloje (NEP_OSNOVNI_PARCELE_CENTROID, SI.GURS.KN:PARCELNE_CENTROID)
+        # Če ta sloj ne deluje, poskusite spremeniti ime ali uporabiti GetFeatureInfo na klik
+        "name": "SI.GURS.KN:PARCELNE_CENTROID",  # Alternativa: NEP_OSNOVNI_PARCELE_CENTROID
         "title": "Številke parcel",
-        "description": "Centroidi parcel s številkami",
-        "url": GURS_WMS_URL, # Pravilen URL (.../wms-si-gurs-kn/wms)
+        "description": "Centroidi parcel s številkami (če sloj ne deluje, številke dobite s klikom na parcelo)",
+        "url": GURS_WMS_URL,
         "format": "image/png",
         "transparent": True,
         "category": "overlay",
-        "default_visible": True, # Privzeto vidne
-        "always_on": False # Lahko se skrije
+        "default_visible": False,  # Spremenjeno na False, ker sloj morda ne obstaja
+        "always_on": False
     },
     "namenska_raba": {
-        "name": "NEP_OST_NAMENSKE_RABE",  # <-- POPRAVLJENO IME za namensko rabo
-        "title": "Namenska raba",
-        "description": "Namenska raba prostora (iz OPN)",
-        "url": GURS_WMS_URL, # <-- URL POPRAVLJEN na KN strežnik (ker je NEP_ sloj)
+        # OPOMBA: Namenska raba je običajno specifična za občino (OPN sloji)
+        # Za splošno namensko rabo uporabite RPE strežnik
+        # Ime sloja se lahko razlikuje (NEP_OST_NAMENSKE_RABE, OPN_*, RPE_*)
+        "name": "RPE:RPE_PO",  # Register prostorskih enot - prostorski odseki
+        "title": "Namenska raba (RPE)",
+        "description": "Namenska raba prostora iz registra prostorskih enot",
+        "url": GURS_RPE_WMS_URL,  # Uporabimo RPE strežnik
         "format": "image/png",
         "transparent": True,
-        "category": "overlay", # <-- SPREMENJENO V OVERLAY
-        "default_visible": False # Privzeto skrita
+        "category": "overlay",
+        "default_visible": True,  # Spremenimo na True za testiranje
+        "opacity": 0.6  # Dodamo prosojnost
     },
     "stavbe": {
         "name": "SI.GURS.KN:STAVBE", # Osnovni podatki o stavbah

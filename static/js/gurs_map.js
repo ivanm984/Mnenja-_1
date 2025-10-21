@@ -158,6 +158,11 @@ function initMap() {
     }
 
     // Ustvarimo dodatne sloje iz konfiguracije
+    console.log(`🔧 Nalagam ${mapConfig.overlayLayers.length} overlay slojev...`);
+    mapConfig.overlayLayers.forEach(cfg => {
+        console.log(`   - ${cfg.id}: "${cfg.name}" (${cfg.default_visible ? 'Viden' : 'Skrit'})`);
+    });
+
     const overlayLayers = mapConfig.overlayLayers
         .map(cfg => createTileLayerFromConfig(cfg, true))
         .filter(l => l); // Filtriramo morebitne napake
@@ -232,13 +237,13 @@ function createTileLayerFromConfig(cfg, isOverlay = false) {
                 TILED: true,
                 FORMAT: format,
                 TRANSPARENT: transparent,
-                // VERSION: '1.3.0' // Lahko specificiramo verzijo
+                VERSION: '1.3.0' // Specificiramo verzijo za boljšo kompatibilnost
             },
             crossOrigin: 'anonymous', // Pomembno za GetFeatureInfo in deljenje
              serverType: 'geoserver' // Namig za OpenLayers, lahko pomaga pri nekaterih strežnikih
         }),
         visible: visible, // Nastavimo začetno vidnost
-        opacity: transparent ? (cfg.opacity ?? 0.8) : 1, // Malo manj prosojno
+        opacity: cfg.opacity ?? (transparent ? 0.8 : 1), // Uporabimo opacity iz config ali privzeto
         name: cfg.id // Uporabimo ID za identifikacijo v kodi
     });
 
@@ -261,10 +266,25 @@ function createTileLayerFromConfig(cfg, isOverlay = false) {
                   layer.setVisible(true);
              }
         }
+
+        console.log(`✅ Overlay sloj ustvarjen: ${cfg.id} (${layerName}) - Viden: ${visible}, Z-Index: ${zIndex}, Opacity: ${layer.getOpacity()}`);
     } else {
         baseLayerMap.set(cfg.id, layer);
         layer.setZIndex(baseLayerMap.size); // Osnovni sloji so pod dodatnimi
+        console.log(`✅ Base sloj ustvarjen: ${cfg.id} (${layerName}) - Viden: ${visible}`);
     }
+
+    // Dodamo error handler za sloj
+    layer.getSource().on('tileloaderror', function(event) {
+        console.error(`❌ Napaka pri nalaganju tile za sloj ${cfg.id} (${layerName}):`, event);
+        console.error(`   URL: ${url}`);
+        console.error(`   Preverite, ali sloj "${layerName}" obstaja na strežniku.`);
+    });
+
+    // Success log
+    layer.getSource().on('tileloadend', function(event) {
+        console.debug(`✓ Tile naložen za sloj ${cfg.id}`);
+    });
 
     return layer;
 }
@@ -577,12 +597,32 @@ async function handleMapClick(evt) {
                 const response = await fetch(rabaUrl);
                  if (response.ok) {
                     const textData = await response.text();
-                    try { rabaData = JSON.parse(textData); } 
-                    catch(e) { console.warn("Namenska raba GetFeatureInfo ni vrnila veljavnega JSON.", textData.substring(0, 200)); }
-                } else { console.warn(`Namenska raba GetFeatureInfo HTTP napaka: ${response.status}`); }
-            } catch (error) { console.error('❌ Namenska raba GetFeatureInfo napaka:', error); }
+                    try {
+                        rabaData = JSON.parse(textData);
+                        console.debug("Namenska raba odgovor:", rabaData);
+                    }
+                    catch(e) {
+                        console.warn("Namenska raba GetFeatureInfo ni vrnila veljavnega JSON.", textData.substring(0, 200));
+                        console.warn("💡 Preverite, ali sloj podpira GetFeatureInfo in ali je ime sloja pravilno.");
+                    }
+                } else {
+                    console.warn(`Namenska raba GetFeatureInfo HTTP napaka: ${response.status}`);
+                    console.warn("💡 Sloj morda ne obstaja ali ni dostopen. Preverite ime sloja v config.py");
+                }
+            } catch (error) {
+                console.error('❌ Namenska raba GetFeatureInfo napaka:', error);
+                console.error('💡 Mogoče sloj ne podpira GetFeatureInfo ali ima napačno ime.');
+            }
         }
-    } else { console.debug('Sloj Namenska raba ni viden ali ni na voljo za GetFeatureInfo.'); }
+    } else {
+        if (!namenskaRabaLayer) {
+            console.debug('Sloj Namenska raba ni bil naložen. Preverite konfiguracijo.');
+        } else if (!namenskaRabaLayer.getVisible()) {
+            console.debug('Sloj Namenska raba ni viden. Vklopite ga v Layer Selector.');
+        } else {
+            console.debug('Sloj Namenska raba nima veljavnega vira.');
+        }
+    }
 
     // 3. Združi rezultate in prikaži
     // Prioriteta: Prikažemo podatke, če imamo vsaj zadetek iz katastra
