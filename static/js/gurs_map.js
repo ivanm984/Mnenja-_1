@@ -1,1072 +1,466 @@
-// GURS Zemljevid JavaScript - POSODOBLJENA VERZIJA
+// GURS Zemljevid JavaScript - POPOLNA VERZIJA 2.5 (Debug koordinate markerjev, preverjanje gumbov)
 
 let map;
 let baseLayerMap = new Map();
 let overlayLayerMap = new Map();
 let dynamicLayerMap = new Map();
 let vectorLayer;
-let katastrLayer; // Zdaj predstavlja samo meje
-let katastrStevilkeLayer; // Ločen sloj za številke
+let katastrLayer;
+let katastrStevilkeLayer;
 let currentParcels = [];
 let selectedParcel = null;
 let sessionId = null;
 let mapConfig = {
     defaultCenter: [14.8267, 46.0569],
     defaultZoom: 14,
-    wmsUrl: 'https://ipi.eprostor.gov.si/wms-si-gurs-kn/wms', // Kataster URL
-    rasterWmsUrl: 'https://ipi.eprostor.gov.si/wms-si-gurs-dts/wms', // Ortofoto URL
-    rpeWmsUrl: 'https://ipi.eprostor.gov.si/wms-si-gurs-rpe/wms', // Namenska raba URL (čeprav jo zdaj kličemo iz KN)
-    baseLayers: [],
-    overlayLayers: []
+    wmsUrl: 'https://ipi.eprostor.gov.si/wms-si-gurs-kn/wms',
+    rasterWmsUrl: 'https://ipi.eprostor.gov.si/wms-si-gurs-dts/wms',
+    rpeWmsUrl: 'https://ipi.eprostor.gov.si/wms-si-gurs-rpe/wms',
+    base_layers: [], // Uporabljamo podčrtaj
+    overlay_layers: [] // Uporabljamo podčrtaj
 };
 let savedMapState = null;
 let mapStateTimer = null;
 
-const LAYER_ICONS = {
-    ortofoto: '📷',
-    namenska_raba: '🏘️',
-    katastr: '📐',
-    katastr_stevilke: '#️⃣', // Ikona za številke
-    stavbe: '🏢',
-    dtm: '⛰️',
-    poplavna: '🌊'
-    // Dodajte ikone za morebitne nove sloje
-};
+const LAYER_ICONS = { ortofoto: '📷', namenska_raba: '🏘️', katastr: '📐', katastr_stevilke: '#️⃣', stavbe: '🏢' };
 
-// Inicializacija ob nalaganju
 DocumentReady(async () => {
-    console.log('🚀 Inicializacija GURS zemljevida...');
-
-    if (typeof ol === 'undefined') {
-        console.error('❌ OpenLayers ni naložen!');
-        alert('Napaka: OpenLayers knjižnica ni naložena.');
-        return;
-    }
-
+    console.log('🚀 Inicializacija GURS zemljevida v2.5...');
+    if (typeof ol === 'undefined') { console.error('❌ OpenLayers ni naložen!'); alert('Napaka: OpenLayers knjižnica ni naložena.'); return; }
     console.log('✅ OpenLayers naložen, verzija:', ol.VERSION || 'unknown');
-
-    const urlParams = new URLSearchParams(window.location.search);
-    sessionId = urlParams.get('session_id');
-
+    const urlParams = new URLSearchParams(window.location.search); sessionId = urlParams.get('session_id');
     await loadMapConfig();
-    initMap(); // Ustvari zemljevid s sloji iz configa
-    registerMapInteractions(); // Shrani stanje ob premikanju
-    buildLayerSelectors(); // Ustvari gumbe za preklop slojev
-    await loadSessionParcels(); // Naloži in prikaži parcele iz seje
-    
-    // Skrij WMS katalog ob nalaganju in dodaj event listener
-    const toggleBtn = document.getElementById('toggleWmsCatalog');
-    const toggleBtnText = document.getElementById('toggleWmsBtn');
-    const catalogContainer = document.getElementById('wmsCatalogContainer');
-    let capabilitiesLoaded = false; 
-
-    if (toggleBtn && catalogContainer && toggleBtnText) {
-        toggleBtn.addEventListener('click', async () => {
-            const isHidden = catalogContainer.style.display === 'none';
-            if (isHidden) {
-                catalogContainer.style.display = 'block';
-                toggleBtnText.textContent = 'Skrij';
-                if (!capabilitiesLoaded) {
-                    await loadWmsCapabilities(); // Naloži seznam samo ob prvem kliku
-                    capabilitiesLoaded = true;
-                }
-            } else {
-                catalogContainer.style.display = 'none';
-                toggleBtnText.textContent = 'Pokaži';
-            }
-        });
+    initMap();
+    if (map) {
+        registerMapInteractions();
+        buildLayerSelectors();
+        await loadSessionParcels();
+        setupWmsCatalogToggle();
+        setupSearchInputEnter();
+        console.log("✅ Vsi elementi zemljevida inicializirani v2.5.");
     } else {
-        console.warn("Elementi za WMS katalog niso najdeni v HTML-ju.");
+        console.error("❌❌❌ Inicializacija zemljevida ni uspela v2.5.");
     }
 });
 
-
-function DocumentReady(callback) {
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', callback);
-    } else {
-        callback();
-    }
-}
+function DocumentReady(callback) { if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', callback); } else { callback(); } }
 
 async function loadMapConfig() {
     try {
         const query = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : '';
         const response = await fetch(`/api/gurs/map-config${query}`);
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
+        if (!response.ok) { throw new Error(`HTTP error! status: ${response.status}`); }
         const data = await response.json();
-        
         if (data.success && data.config) {
-            // Prepišemo celoten config objekt
-            mapConfig = {
-                defaultCenter: data.config.default_center || mapConfig.defaultCenter,
-                defaultZoom: data.config.default_zoom || mapConfig.defaultZoom,
-                wmsUrl: data.config.wms_url || mapConfig.wmsUrl,
-                rasterWmsUrl: data.config.raster_wms_url || mapConfig.rasterWmsUrl,
-                rpeWmsUrl: data.config.rpe_wms_url || mapConfig.rpeWmsUrl, 
-                baseLayers: data.config.base_layers || [],
-                overlayLayers: data.config.overlay_layers || []
-            };
-            
+            data.config.base_layers = Array.isArray(data.config.base_layers) ? data.config.base_layers : [];
+            data.config.overlay_layers = Array.isArray(data.config.overlay_layers) ? data.config.overlay_layers : [];
+            mapConfig = { ...mapConfig, ...data.config };
             savedMapState = data.config.saved_state || null;
             console.log('🧭 Map config uspešno naložen:', mapConfig, 'Shranjeno stanje:', savedMapState);
-        } else {
-             console.warn('⚠️ Map config API ni vrnil uspešnega odgovora ali config podatkov:', data);
-             // Uporabimo privzete vrednosti, ki so že definirane v mapConfig zgoraj
-        }
+        } else { console.warn('⚠️ Map config API:', data); }
     } catch (error) {
-        console.error('❌ Kritična napaka pri nalaganju Map config:', error);
-        // V tem primeru uporabimo trdo kodirane privzete vrednosti
-         mapConfig.baseLayers = mapConfig.baseLayers || [];
-         mapConfig.overlayLayers = mapConfig.overlayLayers || [];
-         console.warn('Uporabljam trdo kodirane privzete URL-je in sloje.');
+        console.error('❌ Kritična napaka nalaganja Map config:', error);
+        console.warn('Uporabljam privzete vrednosti.');
     }
+    mapConfig.base_layers = mapConfig.base_layers || [];
+    mapConfig.overlay_layers = mapConfig.overlay_layers || [];
+    console.log(`Končni mapConfig PRED initMap (po loadMapConfig): Base=${mapConfig.base_layers.length}, Overlay=${mapConfig.overlay_layers.length}`);
 }
 
 function initMap() {
     console.log('🗺️ Kreiram zemljevid...');
-
     const viewCenter = savedMapState?.center || mapConfig.defaultCenter;
     const viewZoom = savedMapState?.zoom || mapConfig.defaultZoom;
 
-    // Resetiramo mape slojev
-    baseLayerMap = new Map();
-    overlayLayerMap = new Map();
-    dynamicLayerMap = new Map();
-    katastrLayer = null;
-    katastrStevilkeLayer = null;
+    baseLayerMap = new Map(); overlayLayerMap = new Map(); dynamicLayerMap = new Map();
+    katastrLayer = null; katastrStevilkeLayer = null;
 
-    // Osnovni OSM sloj (vedno prisoten, ampak skrit)
     const osmLayer = new ol.layer.Tile({ source: new ol.source.OSM(), visible: false });
 
-    // Ustvarimo osnovne sloje iz konfiguracije
-    const baseLayers = mapConfig.baseLayers
-        .map(cfg => createTileLayerFromConfig(cfg, false))
-        .filter(l => l); // Filtriramo morebitne napake
-
-    // Če ni nobenega osnovnega sloja, dodamo vsaj ortofoto
-    if (baseLayers.length === 0) {
-        console.warn("Konfiguracija ni vsebovala osnovnih slojev, dodajam privzeto ortofoto.");
-        const defaultOrto = createTileLayerFromConfig({
-            id: 'ortofoto', name: 'SI.GURS.ZPDZ:DOF025', title: 'Digitalni ortofoto',
-            url: mapConfig.rasterWmsUrl, format: 'image/jpeg', transparent: False,
-            category: 'base', default_visible: True
-        }, false);
-        if (defaultOrto) baseLayers.push(defaultOrto);
-    }
-
-    // Ustvarimo dodatne sloje iz konfiguracije
-    console.log(`🔧 Nalagam ${mapConfig.overlayLayers.length} overlay slojev...`);
-    mapConfig.overlayLayers.forEach(cfg => {
-        console.log(`   - ${cfg.id}: "${cfg.name}" (${cfg.default_visible ? 'Viden' : 'Skrit'})`);
+    const baseLayersOL = [];
+    (mapConfig.base_layers || []).forEach(cfg => {
+        const layer = createTileLayerFromConfig(cfg);
+        if (layer) baseLayersOL.push(layer);
     });
 
-    const overlayLayers = mapConfig.overlayLayers
-        .map(cfg => createTileLayerFromConfig(cfg, true))
-        .filter(l => l); // Filtriramo morebitne napake
+    if (baseLayersOL.length === 0) {
+        console.warn("Ni osnovnih slojev, dodajam privzeto ortofoto.");
+        const defaultOrto = createTileLayerFromConfig({ id: 'ortofoto', name: 'SI.GURS.ZPDZ:DOF025', title: 'Digitalni ortofoto', url: mapConfig.rasterWmsUrl, format: 'image/jpeg', transparent: false, category: 'base', default_visible: true });
+        if (defaultOrto) baseLayersOL.push(defaultOrto);
+    }
 
-    // Preverimo, ali imamo vsaj osnovne katastrske sloje
+    const overlayLayersOL = [];
+    (mapConfig.overlay_layers || []).forEach(cfg => {
+        const layer = createTileLayerFromConfig(cfg);
+        if (layer) overlayLayersOL.push(layer);
+    });
+
     if (!overlayLayerMap.has('katastr')) {
-         console.warn("Konfiguracija ni vsebovala sloja za meje (katastr), dodajam privzetega.");
-         const defaultMeje = createTileLayerFromConfig({
-             id: 'katastr', name: 'SI.GURS.KN:PARCELE', title: 'Parcelne meje',
-             url: mapConfig.wmsUrl, format: 'image/png', transparent: True,
-             category: 'overlay', default_visible: True, always_on: True
-         }, true);
-         if (defaultMeje) overlayLayers.push(defaultMeje);
-    }
-     if (!overlayLayerMap.has('katastr_stevilke')) {
-         console.warn("Konfiguracija ni vsebovala sloja za številke (katastr_stevilke), dodajam privzetega.");
-         const defaultStevilke = createTileLayerFromConfig({
-             id: 'katastr_stevilke', name: 'NEP_OSNOVNI_PARCELE_CENTROID', title: 'Številke parcel',
-             url: mapConfig.wmsUrl, format: 'image/png', transparent: True,
-             category: 'overlay', default_visible: True, always_on: False
-         }, true);
-         if (defaultStevilke) overlayLayers.push(defaultStevilke);
+        console.warn("Dodajam privzeti sloj za meje (katastr).");
+        const l = createTileLayerFromConfig({ id: 'katastr', name: 'SI.GURS.KN:PARCELE', title: 'Parcelne meje', url: mapConfig.wmsUrl, format: 'image/png', transparent: true, category: 'overlay', default_visible: true, always_on: true });
+        if (l) overlayLayersOL.push(l);
     }
 
-    // Shranimo reference na ključne sloje
     katastrLayer = overlayLayerMap.get('katastr');
     katastrStevilkeLayer = overlayLayerMap.get('katastr_stevilke');
 
-    // Združimo vse sloje za inicializacijo zemljevida
-    const layers = [osmLayer, ...baseLayers, ...overlayLayers];
+    const layers = [osmLayer, ...baseLayersOL, ...overlayLayersOL];
 
-    // Ustvarimo zemljevid
-    map = new ol.Map({
-        target: 'map',
-        layers: layers,
-        view: new ol.View({
-            center: ol.proj.fromLonLat(viewCenter),
-            zoom: viewZoom
-        })
-    });
-
-    console.log('✅ Zemljevid inicializiran s sloji:', layers.map(l => l.get('name')));
-    console.log('📍 Začetni center:', viewCenter, 'zoom:', viewZoom);
-
-    // Dodamo interakcijo za klik
-    map.on('singleclick', handleMapClick);
-}
-
-function registerMapInteractions() {
-    if (!map) return;
-    map.on('moveend', scheduleMapStateSave);
-}
-
-function createTileLayerFromConfig(cfg, isOverlay = false) {
-    // Osnovno preverjanje konfiguracije
-    if (!cfg || !cfg.id || !cfg.name || !cfg.url) {
-        console.error("Napačna ali nepopolna konfiguracija sloja:", cfg);
-        return null;
+    try {
+        map = new ol.Map({
+            target: 'map', layers: layers,
+            view: new ol.View({ center: ol.proj.fromLonLat(viewCenter), zoom: viewZoom })
+        });
+        console.log('✅ Zemljevid inicializiran s sloji:', layers.map(l => l.get('name')));
+        console.log('📍 Začetni center:', viewCenter, 'zoom:', viewZoom);
+        map.on('singleclick', handleMapClick);
+    } catch (e) {
+        console.error("❌❌❌ Kritična napaka inicializacije Map:", e);
+        document.getElementById('map').innerHTML = `<div style="padding: 20px; color: var(--danger);">Napaka zagonu zemljevida: ${e.message}.</div>`;
+        map = null;
     }
+}
 
-    const url = cfg.url;
-    const format = cfg.format || 'image/png';
-    const transparent = cfg.transparent !== undefined ? cfg.transparent : true;
-    const visible = cfg.default_visible === true; // Samo tisti z default_visible=true so vidni na začetku
+function registerMapInteractions() { if (!map) return; map.on('moveend', scheduleMapStateSave); }
 
-    const layerName = cfg.name;
-    const layer = new ol.layer.Tile({
-        source: new ol.source.TileWMS({
-            url: url,
-            params: {
-                LAYERS: layerName,
-                TILED: true,
-                FORMAT: format,
-                TRANSPARENT: transparent,
-                VERSION: '1.3.0' // Specificiramo verzijo za boljšo kompatibilnost
-            },
-            crossOrigin: 'anonymous', // Pomembno za GetFeatureInfo in deljenje
-             serverType: 'geoserver' // Namig za OpenLayers, lahko pomaga pri nekaterih strežnikih
-        }),
-        visible: visible, // Nastavimo začetno vidnost
-        opacity: cfg.opacity ?? (transparent ? 0.8 : 1), // Uporabimo opacity iz config ali privzeto
-        name: cfg.id // Uporabimo ID za identifikacijo v kodi
-    });
+function createTileLayerFromConfig(cfg) {
+    if (!cfg || typeof cfg !== 'object' || !cfg.id || !cfg.name || !cfg.url) { console.error("!!! Napačna konfiguracija sloja:", cfg); return null; }
+    const { id, name, url, format = 'image/png', transparent = true, default_visible = false, opacity = 1.0, always_on = false, category = 'overlay' } = cfg;
+    const visible = default_visible === true;
 
-    // Shranimo v ustrezno mapo in nastavimo Z-index
-    if (isOverlay) {
-        overlayLayerMap.set(cfg.id, layer);
-        let zIndex = 50; // Privzeti Z-index za overlaye
-        if (cfg.id === 'katastr') zIndex = 50; // Meje spodaj
-        else if (cfg.id === 'katastr_stevilke') zIndex = 51; // Številke čez meje
-        else if (cfg.id === 'namenska_raba') zIndex = 49; // Raba pod mejami? Lahko testirate.
-        else zIndex = 52 + overlayLayerMap.size; // Ostali čez vse
-        layer.setZIndex(zIndex);
+    try {
+        const layer = new ol.layer.Tile({
+            source: new ol.source.TileWMS({ url: url, params: { LAYERS: name, TILED: true, FORMAT: format, TRANSPARENT: transparent, VERSION: '1.3.0' }, crossOrigin: 'anonymous', serverType: 'geoserver' }),
+            visible: visible, opacity: opacity, name: id
+        });
+        layer.getSource().on('tileloaderror', (event) => { console.warn(`⚠️ Napaka tile za ${id} (${name}):`, event?.tile?.src_ || 'neznan vir'); });
 
-        // Always_on sloji MORAJO biti vidni ob zagonu
-        if (cfg.always_on) {
-            layer.setVisible(true);
-             // Dodatno zagotovilo za always_on sloje
-             if (!layer.getVisible()){
-                  console.warn(`Always_on sloj ${cfg.id} ni bil nastavljen kot viden! Popravljam.`);
-                  layer.setVisible(true);
-             }
+        if (category === 'base') {
+            baseLayerMap.set(id, layer); layer.setZIndex(baseLayerMap.size);
+            console.log(` -> Base sloj ustvarjen: ${id} (${name}) - Viden: ${visible}`);
+        } else {
+            overlayLayerMap.set(id, layer);
+            let zIndex = (id === 'namenska_raba') ? 49 : (id === 'katastr') ? 50 : (id === 'katastr_stevilke') ? 51 : (52 + overlayLayerMap.size);
+            layer.setZIndex(zIndex);
+            if (always_on) { layer.setVisible(true); }
+            console.log(` -> Overlay sloj ustvarjen: ${id} (${name}) - Viden: ${layer.getVisible()}, Z-Index: ${zIndex}`);
         }
-
-        console.log(`✅ Overlay sloj ustvarjen: ${cfg.id} (${layerName}) - Viden: ${visible}, Z-Index: ${zIndex}, Opacity: ${layer.getOpacity()}`);
-    } else {
-        baseLayerMap.set(cfg.id, layer);
-        layer.setZIndex(baseLayerMap.size); // Osnovni sloji so pod dodatnimi
-        console.log(`✅ Base sloj ustvarjen: ${cfg.id} (${layerName}) - Viden: ${visible}`);
-    }
-
-    // Dodamo error handler za sloj
-    layer.getSource().on('tileloaderror', function(event) {
-        console.error(`❌ Napaka pri nalaganju tile za sloj ${cfg.id} (${layerName}):`, event);
-        console.error(`   URL: ${url}`);
-        console.error(`   Preverite, ali sloj "${layerName}" obstaja na strežniku.`);
-    });
-
-    // Success log
-    layer.getSource().on('tileloadend', function(event) {
-        console.debug(`✓ Tile naložen za sloj ${cfg.id}`);
-    });
-
-    return layer;
+        return layer;
+    } catch (e) { console.error(`!!! Kritična napaka ustvarjanja sloja ${id} (${name}):`, e); return null; }
 }
 
 function buildLayerSelectors() {
+    console.log("--- Začenjam buildLayerSelectors ---");
     const baseContainer = document.getElementById('baseLayerOptions');
     const overlayContainer = document.getElementById('overlayLayerOptions');
-    if (!baseContainer || !overlayContainer) return;
+    if (!baseContainer || !overlayContainer) { console.error("!!! Napaka: Kontejnerji za gumbe niso najdeni!"); return; }
+    console.log(" -> Kontejnerji OK.");
 
-    baseContainer.innerHTML = '';
-    overlayContainer.innerHTML = '';
+    const baseLayersConfig = mapConfig.base_layers || [];
+    const overlayLayersConfig = mapConfig.overlay_layers || [];
+    console.log(` -> Podatki: Base=${baseLayersConfig.length}, Overlay=${overlayLayersConfig.length}`);
 
-    // Določimo aktivni osnovni sloj (tisti z default_visible=true)
-    let activeBase = null;
-    mapConfig.baseLayers.forEach(cfg => {
-        if (cfg.default_visible) activeBase = cfg.id;
-    });
-    // Fallback na prvi osnovni sloj, če noben ni default_visible
-    if (!activeBase && mapConfig.baseLayers.length > 0) {
-        activeBase = mapConfig.baseLayers[0].id;
-    }
-    // Dejansko vklopi privzeti sloj na zemljevidu
-    switchBaseLayer(activeBase);
+    baseContainer.innerHTML = ''; overlayContainer.innerHTML = '';
 
-    // Ustvarimo gumbe za osnovne sloje
-    mapConfig.baseLayers.forEach(cfg => {
+    console.log(` -> Obdelujem ${baseLayersConfig.length} osnovnih slojev...`);
+    let activeBase = baseLayersConfig.find(cfg => cfg.default_visible)?.id || baseLayersConfig[0]?.id;
+    if (activeBase) {
+        console.log(` -> Aktiven osnovni sloj: ${activeBase}`);
+        if (baseLayerMap.has(activeBase)) { switchBaseLayer(activeBase); }
+        else { console.warn(` -> Sloj ${activeBase} ni v baseLayerMap!`); }
+    } else { console.log(" -> Ni aktivnega osnovnega sloja."); }
+
+    baseLayersConfig.forEach((cfg, index) => {
+        console.log(`  --> Base layer #${index}: ${cfg.id}`);
         const layer = baseLayerMap.get(cfg.id);
-        if (!layer) return;
-
-        const label = document.createElement('label');
-        label.className = 'layer-option' + (cfg.id === activeBase ? ' active' : '');
-        label.setAttribute('data-layer-id', cfg.id);
-        label.title = cfg.description || cfg.title; // Tooltip
-
-        const input = document.createElement('input'); // Skrit
-        input.type = 'radio';
-        input.name = 'base-layer';
-        input.value = cfg.id;
-        input.checked = (cfg.id === activeBase);
-        
-        label.addEventListener('click', () => switchBaseLayer(cfg.id));
-
-        const icon = LAYER_ICONS[cfg.id] || '🗺️';
-        const span = document.createElement('span');
-        span.textContent = `${icon} ${cfg.title || cfg.id}`;
-
-        label.appendChild(input);
-        label.appendChild(span);
-        baseContainer.appendChild(label);
+        if (!layer) { console.warn(`  !!! Sloj ${cfg.id} ni v baseLayerMap!`); return; }
+        console.log(`  --> Sloj ${cfg.id} najden.`);
+        try {
+            const label = document.createElement('label'); label.className = 'layer-option' + (cfg.id === activeBase ? ' active' : ''); label.setAttribute('data-layer-id', cfg.id); label.title = cfg.description || cfg.title || cfg.id;
+            const input = document.createElement('input'); input.type = 'radio'; input.name = 'base-layer'; input.value = cfg.id; input.checked = (cfg.id === activeBase);
+            label.addEventListener('click', () => switchBaseLayer(cfg.id)); // Event listener dodan TUKAJ
+            const span = document.createElement('span'); span.textContent = `${LAYER_ICONS[cfg.id] || '🗺️'} ${cfg.title || cfg.id}`;
+            label.appendChild(input); label.appendChild(span); baseContainer.appendChild(label);
+            console.log(`  --> Gumb za ${cfg.id} dodan.`);
+        } catch (e) { console.error(`  !!! Napaka gumba za ${cfg.id}:`, e); }
     });
 
-    // Ustvarimo gumbe za dodatne sloje
-    mapConfig.overlayLayers.forEach(cfg => {
+    console.log(` -> Obdelujem ${overlayLayersConfig.length} dodatnih slojev...`);
+    overlayLayersConfig.forEach((cfg, index) => {
+        console.log(`  --> Overlay layer #${index}: ${cfg.id}`);
         const layer = overlayLayerMap.get(cfg.id);
-        if (!layer) return;
-
-        const label = document.createElement('label');
-        const isActive = layer.getVisible(); // Preberemo dejansko stanje sloja
-        label.className = 'layer-option' + (isActive ? ' active' : '');
-        label.setAttribute('data-layer-id', cfg.id);
-        label.title = cfg.description || cfg.title; // Tooltip
-
-        const input = document.createElement('input'); // Skrit
-        input.type = 'checkbox';
-        input.value = cfg.id;
-        input.checked = isActive;
-        input.disabled = cfg.always_on || false; // Onemogočimo klik za always_on
-        
-        label.addEventListener('click', (e) => {
-            if (input.disabled) { e.preventDefault(); return; }
-            const isCheckedNow = !input.checked; // Preklopimo stanje
-            input.checked = isCheckedNow; // Sinhroniziramo skriti input
-            toggleOverlayLayer(cfg.id, isCheckedNow); // Vklopimo/izklopimo sloj
-        });
-
-        const icon = LAYER_ICONS[cfg.id] || '🗂️';
-        const span = document.createElement('span');
-        span.textContent = `${icon} ${cfg.title || cfg.id}`;
-        if (input.disabled) {
-             span.style.opacity = '0.7'; // Malo bolj sivo za onemogočene
-             span.title = "Ta sloj je vedno vklopljen";
-        }
-
-        label.appendChild(input);
-        label.appendChild(span);
-        overlayContainer.appendChild(label);
+        if (!layer) { console.warn(`  !!! Sloj ${cfg.id} ni v overlayLayerMap!`); return; }
+        console.log(`  --> Sloj ${cfg.id} najden.`);
+        const isActive = layer.getVisible();
+        try {
+            const label = document.createElement('label'); label.className = 'layer-option' + (isActive ? ' active' : ''); label.setAttribute('data-layer-id', cfg.id); label.title = cfg.description || cfg.title || cfg.id;
+            const input = document.createElement('input'); input.type = 'checkbox'; input.value = cfg.id; input.checked = isActive; input.disabled = cfg.always_on || false;
+            // PREJŠNJA NAPAKA: Event listener je bil vezan na label, ampak je moral biti vezan na input za checkbox pravilno delovanje
+            // label.addEventListener('click', ...); // Stara, napačna koda
+            input.addEventListener('change', (e) => { // ✅ POPRAVLJENO: Listener na 'change' dogodek input elementa
+                 if (input.disabled) { e.preventDefault(); return; }
+                 toggleOverlayLayer(cfg.id, e.target.checked); // Posredujemo novo stanje (true/false)
+            });
+            const span = document.createElement('span'); span.textContent = `${LAYER_ICONS[cfg.id] || '🗂️'} ${cfg.title || cfg.id}`;
+            if (input.disabled) { span.style.opacity = '0.7'; span.title = "Vedno vklopljen"; }
+            label.appendChild(input); label.appendChild(span); overlayContainer.appendChild(label);
+            console.log(`  --> Gumb za ${cfg.id} dodan (Viden: ${isActive}).`);
+        } catch (e) { console.error(`  !!! Napaka gumba za ${cfg.id}:`, e); }
     });
+    console.log("--- Končujem buildLayerSelectors ---");
 }
 
-
 function switchBaseLayer(layerId) {
-    if (!layerId || !baseLayerMap.has(layerId)) {
-         console.warn(`Poskus preklopa na neobstoječ osnovni sloj: ${layerId}`);
-         return;
-    }
-    
-    // Izklopi vse osnovne sloje, vklopi izbranega
+    console.log(`>>> switchBaseLayer CALLED with ID: ${layerId}`);
+    if (!layerId || !baseLayerMap.has(layerId)) { console.warn(`switchBaseLayer: Neobstoječ sloj ${layerId}`); return; }
+    const layerToActivate = baseLayerMap.get(layerId);
+    if (!layerToActivate) { console.warn(`switchBaseLayer: Sloj ${layerId} ni bil najden v mapi!`); return; }
+    console.log(`   -> Poskušam aktivirati sloj:`, layerToActivate.get('name'));
+    let changed = false;
     baseLayerMap.forEach((layer, id) => {
-        layer.setVisible(id === layerId);
+        const shouldBeVisible = (id === layerId);
+        if (layer.getVisible() !== shouldBeVisible) {
+            console.log(`   -> Spreminjam vidnost za ${id} na ${shouldBeVisible}`);
+            try { layer.setVisible(shouldBeVisible); changed = true; }
+            catch (e) { console.error(`   !!! Napaka pri setVisible za ${id}:`, e); }
+            console.log(`   -> Vidnost za ${id} JE ZDAJ ${layer.getVisible()}`);
+        }
     });
-
-    // Posodobi UI gumbe
-    document.querySelectorAll('#baseLayerOptions .layer-option').forEach(option => {
-        const id = option.getAttribute('data-layer-id');
-        option.classList.toggle('active', id === layerId);
-        const input = option.querySelector('input');
-        if (input) input.checked = (id === layerId);
-    });
-     console.log(`Preklopljeno na osnovni sloj: ${layerId}`);
+    if (changed) {
+        document.querySelectorAll('#baseLayerOptions .layer-option').forEach(option => {
+            const id = option.getAttribute('data-layer-id'); option.classList.toggle('active', id === layerId);
+            const input = option.querySelector('input'); if (input) input.checked = (id === layerId);
+        });
+        console.log(`   -> UI posodobljen za ${layerId}`);
+    } else {
+        console.log(`   -> Vidnost za ${layerId} je že bila pravilna.`);
+    }
 }
 
 function toggleOverlayLayer(layerId, visible) {
-    const layer = overlayLayerMap.get(layerId);
-    if (!layer) {
-        console.warn(`Poskus preklopa neobstoječega dodatnega sloja: ${layerId}`);
-        return;
-    }
+    console.log(`>>> toggleOverlayLayer CALLED for ID: ${layerId}, visible: ${visible}`);
+    const layer = overlayLayerMap.get(layerId); if (!layer) { console.warn(`toggleOverlayLayer: Sloj ${layerId} ni najden!`); return; }
+    const cfg = (mapConfig.overlay_layers || []).find(l => l.id === layerId);
+    if (cfg?.always_on && !visible) { console.log(`   -> Sloj ${layerId} je always_on.`); return; }
 
-    const cfg = mapConfig.overlayLayers.find(l => l.id === layerId);
-    // Always_on slojev ne dovolimo izklopiti
-    if (cfg?.always_on && !visible) {
-         console.log(`Sloj ${layerId} je always_on in ga ni mogoče izklopiti.`);
-        // Zagotovimo, da ostane vklopljen tudi v UI
-         document.querySelectorAll('#overlayLayerOptions .layer-option').forEach(option => {
-            if (option.getAttribute('data-layer-id') === layerId) {
-                option.classList.add('active');
-                const input = option.querySelector('input');
-                if (input) input.checked = true;
-            }
-         });
-        return; 
-    }
+    console.log(`   -> Poskušam nastaviti vidnost za ${layerId} na ${visible}`);
+    try { layer.setVisible(visible); }
+    catch (e) { console.error(`   !!! Napaka pri setVisible za ${layerId}:`, e); return; }
+    console.log(`   -> Vidnost za ${layerId} JE ZDAJ ${layer.getVisible()}`);
 
-    // Nastavimo vidnost sloja
-    layer.setVisible(visible);
-
-    // Posodobimo UI gumb
-    document.querySelectorAll('#overlayLayerOptions .layer-option').forEach(option => {
-        if (option.getAttribute('data-layer-id') === layerId) {
-            option.classList.toggle('active', visible);
-            // Input je že posodobljen zgoraj v event listenerju
+    document.querySelectorAll('#overlayLayerOptions .layer-option[data-layer-id="' + layerId + '"]').forEach(option => {
+        option.classList.toggle('active', visible);
+        const input = option.querySelector('input');
+        if (input && input.checked !== visible) {
+             console.warn(`   -> Desinhronizacija UI za ${layerId}, popravljam input.`);
+             input.checked = visible;
         }
     });
-     console.log(`Vidnost dodatnega sloja ${layerId} nastavljena na: ${visible}`);
+    console.log(`   -> UI posodobljen za ${layerId}`);
 }
 
+function setupWmsCatalogToggle() {
+    const toggleBtn = document.getElementById('toggleWmsCatalog'); const toggleBtnText = document.getElementById('toggleWmsBtn'); const catalogContainer = document.getElementById('wmsCatalogContainer');
+    let capabilitiesLoaded = false;
+    if (toggleBtn && catalogContainer && toggleBtnText) {
+        toggleBtn.addEventListener('click', async () => {
+            const isHidden = catalogContainer.style.display === 'none'; catalogContainer.style.display = isHidden ? 'block' : 'none'; toggleBtnText.textContent = isHidden ? 'Skrij' : 'Pokaži';
+            if (isHidden && !capabilitiesLoaded) { await loadWmsCapabilities(); capabilitiesLoaded = true; }
+        });
+    } else { console.warn("Elementi za WMS katalog niso najdeni."); }
+}
 
 async function loadWmsCapabilities() {
-    const status = document.getElementById('capabilityStatus');
-    const list = document.getElementById('capabilityLayers');
-    if (!status || !list) return;
-    status.textContent = 'Nalagam seznam dodatnih slojev...';
-    list.innerHTML = ''; // Počistimo prejšnje
-
+    const status = document.getElementById('capabilityStatus'); const list = document.getElementById('capabilityLayers');
+    if (!status || !list) return; status.textContent = 'Nalagam seznam...'; list.innerHTML = '';
     try {
-        // Kličemo API, ki pridobi Capabilities iz GURS_WMS_URL (KN strežnik)
-        const response = await fetch('/api/gurs/wms-capabilities');
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const response = await fetch('/api/gurs/wms-capabilities'); if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const data = await response.json();
-        
         if (data.success && Array.isArray(data.layers) && data.layers.length > 0) {
-            status.textContent = 'Izberite sloj za dodajanje na zemljevid:';
-            renderCapabilityLayers(data.layers, data.wms_url, list); // data.wms_url je KN URL
-        } else {
-            status.textContent = 'Seznam dodatnih slojev trenutno ni na voljo.';
-            console.warn("WMS Capabilities API odgovor ni bil uspešen ali je prazen:", data);
-        }
-    } catch (error) {
-        console.error('❌ Napaka pri nalaganju WMS capabilities:', error);
-        status.textContent = 'Napaka pri nalaganju seznama slojev.';
-    }
+            status.textContent = 'Izberite sloj za dodajanje:';
+            // ✅ POPRAVLJENO: Uporabimo mapConfig.overlay_layers za preverjanje znanih
+            const knownNames = new Set([...(mapConfig.base_layers || []), ...(mapConfig.overlay_layers || [])].map(l => l.name));
+            renderCapabilityLayers(data.layers, data.wms_url, list, knownNames);
+        } else { status.textContent = 'Seznam ni na voljo.'; console.warn("WMS Caps API:", data); }
+    } catch (error) { console.error('❌ Napaka WMS capabilities:', error); status.textContent = 'Napaka nalaganja.'; }
 }
 
-function renderCapabilityLayers(layers, wmsUrl, container) {
-    container.innerHTML = ''; // Počistimo prejšnjo vsebino
-    let addedCount = 0;
-    
-    // Zgradimo seznam imen že uporabljenih slojev
-    const knownLayerNames = new Set();
-    mapConfig.baseLayers.forEach(l => l.name.split(',').forEach(n => knownLayerNames.add(n.trim())));
-    mapConfig.overlayLayers.forEach(l => l.name.split(',').forEach(n => knownLayerNames.add(n.trim())));
-
-    // Filtriramo in prikažemo do 50 slojev, ki še niso v osnovni konfiguraciji
+function renderCapabilityLayers(layers, wmsUrl, container, knownLayerNames) { // Dodan parameter knownLayerNames
+    container.innerHTML = ''; let addedCount = 0;
     layers.forEach(layer => {
-        if (addedCount >= 50) return; // Omejitev števila prikazanih
-        
-        // Preskočimo, če ime sloja že obstaja v osnovni konfiguraciji
-        if (!layer.name || knownLayerNames.has(layer.name.trim())) {
-            return; 
-        }
-
-        const wrapper = document.createElement('div');
-        wrapper.className = 'layer-chip';
-
-        const info = document.createElement('span');
-        info.textContent = layer.title || layer.name;
-        info.title = layer.description || `Ime sloja: ${layer.name}`; // Tooltip
-
-        const toggleBtn = document.createElement('button');
-        toggleBtn.type = 'button';
-        toggleBtn.textContent = dynamicLayerMap.has(layer.name) ? 'Odstrani' : 'Dodaj';
-        toggleBtn.className = 'btn-toggle-dynamic-layer';
-        toggleBtn.setAttribute('data-layer-name', layer.name); // Shranimo ime za lažji dostop
-
-        toggleBtn.addEventListener('click', () => {
-            const layerName = toggleBtn.getAttribute('data-layer-name');
-            if (dynamicLayerMap.has(layerName)) {
-                removeDynamicLayer(layerName);
-                toggleBtn.textContent = 'Dodaj';
-            } else {
-                // Posredujemo celoten layerInfo objekt
-                addDynamicLayer(layer, wmsUrl); 
-                toggleBtn.textContent = 'Odstrani';
-            }
-        });
-
-        wrapper.appendChild(info);
-        wrapper.appendChild(toggleBtn);
-        container.appendChild(wrapper);
-        addedCount++;
+        if (addedCount >= 50 || !layer.name || knownLayerNames.has(layer.name.trim())) return;
+        const w = document.createElement('div'); w.className = 'layer-chip';
+        const i = document.createElement('span'); i.textContent = layer.title || layer.name; i.title = layer.description || `Ime: ${layer.name}`;
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = dynamicLayerMap.has(layer.name) ? 'Odstrani' : 'Dodaj';
+        b.className = 'btn-toggle-dynamic-layer'; b.setAttribute('data-layer-name', layer.name);
+        b.addEventListener('click', () => { const n = b.getAttribute('data-layer-name'); if (dynamicLayerMap.has(n)) { removeDynamicLayer(n); b.textContent = 'Dodaj'; } else { addDynamicLayer(layer, wmsUrl); b.textContent = 'Odstrani'; } });
+        w.appendChild(i); w.appendChild(b); container.appendChild(w); addedCount++;
     });
-    
-    if (addedCount === 0) {
-        container.textContent = 'Ni dodatnih slojev za prikaz iz tega vira.';
-    }
+    if (addedCount === 0) { container.textContent = 'Ni dodatnih slojev.'; }
 }
 
 function addDynamicLayer(layerInfo, wmsUrl) {
-    if (!layerInfo?.name) {
-        console.error("Ne morem dodati dinamičnega sloja brez imena:", layerInfo);
-        return;
-    }
-    const layerName = layerInfo.name;
-
-    // Preverimo, če sloj že obstaja
-    if (dynamicLayerMap.has(layerName)) {
-        console.warn(`Dinamični sloj ${layerName} je že dodan.`);
-        return;
-    }
-
-    console.log(`Dodajam dinamični sloj ${layerName} iz ${wmsUrl}`);
-    const layer = new ol.layer.Tile({
-        source: new ol.source.TileWMS({
-            url: wmsUrl, // Uporabimo URL vira
-            params: {
-                LAYERS: layerName,
-                TILED: true,
-                FORMAT: 'image/png',
-                TRANSPARENT: true
-            },
-            crossOrigin: 'anonymous'
-        }),
-        opacity: 0.7,
-        visible: true, // Dinamični sloji so takoj vidni
-        name: `dynamic-${layerName}` // Dodamo predpono za lažje razlikovanje
-    });
-
-    layer.setZIndex(60 + dynamicLayerMap.size); // Nad vsemi ostalimi
-    dynamicLayerMap.set(layerName, layer);
-    map.addLayer(layer);
-    console.log(`➕ Dinamični sloj ${layerName} dodan.`);
+    if (!layerInfo?.name) { console.error("Brez imena sloja:", layerInfo); return; } const n = layerInfo.name; if (dynamicLayerMap.has(n)) { console.warn(`Sloj ${n} že dodan.`); return; }
+    console.log(`Dodajam dinamični sloj ${n} iz ${wmsUrl}`);
+    try {
+        const l = new ol.layer.Tile({ source: new ol.source.TileWMS({ url: wmsUrl, params: { LAYERS: n, TILED: true, FORMAT: 'image/png', TRANSPARENT: true }, crossOrigin: 'anonymous' }), opacity: 0.7, visible: true, name: `dynamic-${n}` });
+        l.setZIndex(60 + dynamicLayerMap.size); dynamicLayerMap.set(n, l); map.addLayer(l); console.log(`➕ Dinamični sloj ${n} dodan.`);
+    } catch (e) { console.error(`!!! Napaka pri dodajanju dinamičnega sloja ${n}:`, e); }
 }
 
 function removeDynamicLayer(layerName) {
-    const layer = dynamicLayerMap.get(layerName);
-    if (!layer) {
-         console.warn(`Poskus odstranitve neobstoječega dinamičnega sloja: ${layerName}`);
-         return;
-    }
-    map.removeLayer(layer);
-    dynamicLayerMap.delete(layerName);
-    console.log(`➖ Dinamični sloj ${layerName} odstranjen.`);
+    const l = dynamicLayerMap.get(layerName); if (!l) { console.warn(`Sloj ${layerName} ni dodan.`); return; }
+    map.removeLayer(l); dynamicLayerMap.delete(layerName); console.log(`➖ Dinamični sloj ${layerName} odstranjen.`);
 }
 
 async function handleMapClick(evt) {
-    console.log('🖱️ Klik na koordinatah:', evt.coordinate);
-    const viewResolution = map.getView().getResolution();
-    let parcelData = null; // Podatki iz KN:PARCELE
-    let rabaData = null; // Podatki iz NEP_OST_NAMENSKE_RABE
+    if (!map) return; console.log('🖱️ Klik na koordinatah:', evt.coordinate);
+    const viewResolution = map.getView().getResolution(); let parcelData = null; let rabaData = null;
 
-    // 1. Pridobi podatke iz katastra (meje) za osnovne info (ID, Površina)
     if (katastrLayer && katastrLayer.getVisible() && katastrLayer.getSource()) {
-        const katastrUrl = katastrLayer.getSource().getFeatureInfoUrl(
-            evt.coordinate, viewResolution, 'EPSG:3857',
-            { INFO_FORMAT: 'application/json', FEATURE_COUNT: 1 }
-        );
-        if (katastrUrl) {
-            try {
-                console.debug("Zahtevam GetFeatureInfo (Kataster):", katastrUrl);
-                const response = await fetch(katastrUrl);
-                if (response.ok) {
-                    const textData = await response.text();
-                    try { parcelData = JSON.parse(textData); } 
-                    catch(e) { console.warn("Kataster GetFeatureInfo ni vrnil veljavnega JSON.", textData.substring(0, 200)); }
-                } else { console.warn(`Kataster GetFeatureInfo HTTP napaka: ${response.status}`); }
-            } catch (error) { console.error('❌ Kataster GetFeatureInfo napaka:', error); }
-        }
-    } else { console.debug('Sloj katastrskih mej ni viden ali ni na voljo za GetFeatureInfo.'); }
+        const url = katastrLayer.getSource().getFeatureInfoUrl(evt.coordinate, viewResolution, 'EPSG:3857', { INFO_FORMAT: 'application/json', FEATURE_COUNT: 1 });
+        if (url) { try { console.debug("Zahtevam GFI (Kataster):", url.substring(0, 150) + "..."); const r = await fetch(url); if (r.ok) { const t = await r.text(); try { parcelData = JSON.parse(t); } catch(e) { console.warn("Kataster GFI ni JSON.", t.substring(0, 100)); }} else { console.warn(`Kataster GFI HTTP ${r.status}`); } } catch (e) { console.error('❌ Kataster GFI napaka:', e); }}
+    } else { console.debug('Kataster sloj ni viden/na voljo.'); }
 
-    // 2. Pridobi podatke o namenski rabi (če je sloj viden)
-    const namenskaRabaLayer = overlayLayerMap.get('namenska_raba'); // Iščemo med OVERLAY sloji
+    const namenskaRabaLayer = overlayLayerMap.get('namenska_raba');
     if (namenskaRabaLayer && namenskaRabaLayer.getVisible() && namenskaRabaLayer.getSource()) {
-        const rabaUrl = namenskaRabaLayer.getSource().getFeatureInfoUrl(
-            evt.coordinate, viewResolution, 'EPSG:3857',
-            { INFO_FORMAT: 'application/json', FEATURE_COUNT: 1 }
-        );
-        if (rabaUrl) {
-             try {
-                console.debug("Zahtevam GetFeatureInfo (Raba):", rabaUrl);
-                const response = await fetch(rabaUrl);
-                 if (response.ok) {
-                    const textData = await response.text();
-                    try {
-                        rabaData = JSON.parse(textData);
-                        console.debug("Namenska raba odgovor:", rabaData);
-                    }
-                    catch(e) {
-                        console.warn("Namenska raba GetFeatureInfo ni vrnila veljavnega JSON.", textData.substring(0, 200));
-                        console.warn("💡 Preverite, ali sloj podpira GetFeatureInfo in ali je ime sloja pravilno.");
-                    }
-                } else {
-                    console.warn(`Namenska raba GetFeatureInfo HTTP napaka: ${response.status}`);
-                    console.warn("💡 Sloj morda ne obstaja ali ni dostopen. Preverite ime sloja v config.py");
-                }
-            } catch (error) {
-                console.error('❌ Namenska raba GetFeatureInfo napaka:', error);
-                console.error('💡 Mogoče sloj ne podpira GetFeatureInfo ali ima napačno ime.');
-            }
-        }
-    } else {
-        if (!namenskaRabaLayer) {
-            console.debug('Sloj Namenska raba ni bil naložen. Preverite konfiguracijo.');
-        } else if (!namenskaRabaLayer.getVisible()) {
-            console.debug('Sloj Namenska raba ni viden. Vklopite ga v Layer Selector.');
-        } else {
-            console.debug('Sloj Namenska raba nima veljavnega vira.');
-        }
-    }
+        const url = namenskaRabaLayer.getSource().getFeatureInfoUrl(evt.coordinate, viewResolution, 'EPSG:3857', { INFO_FORMAT: 'application/json', FEATURE_COUNT: 1 });
+        if (url) { try { console.debug("Zahtevam GFI (Raba):", url.substring(0, 150) + "..."); const r = await fetch(url); if (r.ok) { const t = await r.text(); try { rabaData = JSON.parse(t); console.debug("Namenska raba GFI odgovor:", rabaData);} catch(e) { console.warn("Namenska raba GFI ni JSON.", t.substring(0, 100)); }} else { console.warn(`Namenska raba GFI HTTP ${r.status}`); } } catch (e) { console.error('❌ Namenska raba GFI napaka:', e); }}
+    } else { console.debug('Sloj namenske rabe ni viden/na voljo.'); }
 
-    // 3. Združi rezultate in prikaži
-    // Prioriteta: Prikažemo podatke, če imamo vsaj zadetek iz katastra
     if (parcelData && Array.isArray(parcelData.features) && parcelData.features.length > 0) {
-        console.log("Prejeti podatki iz katastra:", parcelData.features[0].properties);
-        if (rabaData && Array.isArray(rabaData.features) && rabaData.features.length > 0) {
-             console.log("Prejeti podatki iz namenske rabe:", rabaData.features[0].properties);
-        } else {
-             console.log("Podatki o namenski rabi niso bili najdeni za to lokacijo.");
-        }
-        handleParcelClick(parcelData.features[0], rabaData); // Posredujemo oba rezultata
+        console.log("Prejeti GFI podatki iz katastra:", parcelData.features[0].properties);
+        if (rabaData && Array.isArray(rabaData.features) && rabaData.features.length > 0) { console.log("Prejeti GFI podatki iz namenske rabe:", rabaData.features[0].properties); } else { console.log("GFI Podatki o namenski rabi niso bili najdeni."); }
+        processAndDisplayClickedParcel(parcelData.features[0], rabaData);
     } else {
-        console.log("Na kliknjeni lokaciji ni bilo najdenih podatkov o parceli.");
-        // Počistimo info okno
-        document.getElementById('parcelInfo').style.display = 'none';
-        document.getElementById('emptyState').style.display = 'block';
+        console.log("Na kliknjeni lokaciji ni bilo najdenih GFI podatkov o parceli.");
+        document.getElementById('parcelInfo').style.display = 'none'; document.getElementById('emptyState').style.display = 'block';
     }
 }
 
-function handleParcelClick(parcelFeature, rabaFeatureInfo = null) {
-    const props = parcelFeature.properties || {}; // Podatki iz KN:PARCELE
-    let namenskaRabaOpis = 'Ni podatka'; // Privzeta vrednost
+function processAndDisplayClickedParcel(parcelFeature, rabaFeatureInfo = null) {
+    const props = parcelFeature.properties || {}; let namenskaRabaOpis = 'Ni podatka';
+    const stevilka = props.ST_PARCELE || props.PARCELNA_STEVILKA || props.st_parce || props.EID_PARCELA || 'Neznano';
+    const ko_id = props.KO_ID || props.ko_id; const ko_naziv = props.NAZIV || props.ime_ko || '';
+    const ko_display = ko_id ? `${ko_naziv.replace(ko_id.toString(), '').trim()} (${ko_id})` : ko_naziv || 'Neznano';
+    const povrsina_raw = props.POVRSINA || props.RAC_POVRSINA || props.povrsina || 0; const povrsina = parseInt(povrsina_raw, 10) || 0;
+    console.log(`Izluščeno iz katastra GFI: Št=${stevilka}, KO=${ko_display}, Pov=${povrsina}`);
 
-    // Poskusimo dobiti namensko rabo iz drugega klica (rabaFeatureInfo)
     if (rabaFeatureInfo && Array.isArray(rabaFeatureInfo.features) && rabaFeatureInfo.features.length > 0) {
         const rabaProps = rabaFeatureInfo.features[0].properties || {};
-        // Poskusimo različna možna imena polj za opis namenske rabe
-        namenskaRabaOpis = rabaProps.NAM_RABA_OPIS || rabaProps.EUP_OPIS || rabaProps.OPIS || rabaProps.RABA || namenskaRabaOpis;
-        console.log(`Najdena namenska raba: '${namenskaRabaOpis}' iz polj:`, rabaProps);
+        namenskaRabaOpis = rabaProps.OPIS || rabaProps.NAM_RABA_OPIS || rabaProps.EUP_OPIS || rabaProps.RABA || `ID: ${rabaProps.NAMENSKA_RABA_ID || rabaProps.VRSTA_NAMENSKE_RABE_ID || '?'}` || namenskaRabaOpis;
+        console.log(`Najdena namenska raba GFI: '${namenskaRabaOpis}' iz polj:`, rabaProps);
     } else {
-         console.debug("Podatki o namenski rabi niso bili najdeni v GetFeatureInfo odgovoru.");
-         // Dodaten poskus: Ali je podatek morda že v parcelFeature? (malo verjetno)
-         if (props.NAM_RABA_OPIS || props.EUP_OPIS) {
-              namenskaRabaOpis = props.NAM_RABA_OPIS || props.EUP_OPIS;
-              console.log(`Namenska raba najdena v osnovnih podatkih parcele: '${namenskaRabaOpis}'`);
-         }
+         console.debug("GFI Podatki o namenski rabi niso bili najdeni.");
+         if (props.NAM_RABA_OPIS || props.EUP_OPIS) { namenskaRabaOpis = props.NAM_RABA_OPIS || props.EUP_OPIS; console.log(`Namenska raba GFI najdena v katastru: '${namenskaRabaOpis}'`); }
+         else if (props.VRSTA_NAMENSKE_RABE_ID) { namenskaRabaOpis = `ID: ${props.VRSTA_NAMENSKE_RABE_ID}`; console.log(`Namenska raba GFI ID najden v katastru: '${namenskaRabaOpis}'`); }
     }
-
-    // Sestavimo objekt 'selectedParcel'
-    selectedParcel = {
-        stevilka: props.ST_PARCE || 'Neznano', // Glavno polje za številko
-        katastrska_obcina: props.IME_KO || 'Neznano', // Glavno polje za ime KO
-        povrsina: parseInt(props.POVRSINA || props.RAC_POVRSINA || 0, 10), // Uradna ali računska površina kot število
-        namenska_raba: namenskaRabaOpis // Vrednost, ki smo jo pridobili
-    };
-
-    console.log("Končni podatki za prikaz:", selectedParcel);
-    displayParcelInfo(selectedParcel); // Pokažemo podatke v UI
+    selectedParcel = { stevilka: stevilka.startsWith('1001') ? 'Neznano (EID)' : stevilka, katastrska_obcina: ko_display, povrsina: povrsina, namenska_raba: namenskaRabaOpis };
+    console.log("Končni podatki GFI za prikaz:", selectedParcel);
+    displayParcelInfo(selectedParcel);
 }
 
-
 function displayParcelInfo(parcel) {
-    const infoDiv = document.getElementById('parcelInfo');
-    const emptyState = document.getElementById('emptyState');
-    const contentDiv = document.getElementById('parcelInfoContent');
+    const infoDiv = document.getElementById('parcelInfo'); const emptyState = document.getElementById('emptyState'); const contentDiv = document.getElementById('parcelInfoContent');
     if (!infoDiv || !contentDiv || !emptyState) return;
-
-    infoDiv.style.display = 'block';
-    emptyState.style.display = 'none';
-    
-    // Formatiramo površino le, če je večja od 0
+    infoDiv.style.display = 'block'; emptyState.style.display = 'none';
     const povrsinaFormatted = (parcel.povrsina > 0) ? `${parcel.povrsina} m²` : 'Ni podatka';
-
     contentDiv.innerHTML = `
-        <div class="info-row">
-            <div class="info-label">Parcela</div>
-            <div class="info-value">${parcel.stevilka || 'N/A'}</div>
-        </div>
-        <div class="info-row">
-            <div class="info-label">Katastrska občina</div>
-            <div class="info-value">${parcel.katastrska_obcina || 'N/A'}</div>
-        </div>
-        <div class="info-row">
-            <div class="info-label">Površina</div>
-            <div class="info-value">${povrsinaFormatted}</div>
-        </div>
-        <div class="info-row">
-            <div class="info-label">Namenska raba (info)</div>
-            <div class="info-value">${parcel.namenska_raba || 'Ni podatka'}</div>
-        </div>
-    `;
+        <div class="info-row"><div class="info-label">Parcela</div><div class="info-value">${parcel.stevilka || 'N/A'}</div></div>
+        <div class="info-row"><div class="info-label">Katastrska občina</div><div class="info-value">${parcel.katastrska_obcina || 'N/A'}</div></div>
+        <div class="info-row"><div class="info-label">Površina</div><div class="info-value">${povrsinaFormatted}</div></div>
+        <div class="info-row"><div class="info-label">Namenska raba</div><div class="info-value">${parcel.namenska_raba || 'Ni podatka'}</div></div>`;
 }
 
 function addParcelMarkers(parcels) {
     console.log(`📍 Poskušam dodati ${parcels?.length || 0} markerjev...`);
+    if (vectorLayer) { if (map) map.removeLayer(vectorLayer); vectorLayer = null; }
+    if (!map || !Array.isArray(parcels) || parcels.length === 0) { console.warn("Ni zemljevida ali parcel za markerje."); return; }
 
-    // Odstranimo prejšnji vektorski sloj, če obstaja
-    if (vectorLayer) {
-        map.removeLayer(vectorLayer);
-        vectorLayer = null; // Resetiramo referenco
-    }
-    
-    // Preverimo, ali imamo veljaven seznam parcel
-    if (!Array.isArray(parcels) || parcels.length === 0) {
-        console.warn("Ni parcel za dodajanje markerjev.");
-        return;
-    }
-
-    // Ustvarimo feature za vsako parcelo z veljavnimi koordinatami
-    const features = parcels.map(parcel => {
-        if (!parcel || !Array.isArray(parcel.coordinates) || parcel.coordinates.length < 2 || !parcel.coordinates.every(c => typeof c === 'number' && isFinite(c))) {
-            console.warn("Neveljavne ali manjkajoče koordinate za parcelo:", parcel?.stevilka || 'brez št.', parcel);
-            return null; // Preskočimo neveljavno parcelo
-        }
-        
+    const features = parcels.map((p, index) => {
+        console.log(`  -> Obdelujem parcelo #${index}:`, p); // LOG KOORD 1
+        if (!p || !Array.isArray(p.coordinates) || p.coordinates.length < 2) { console.warn(`  !!! Neveljavne koordinate #${index}:`, p?.stevilka, p?.coordinates); return null; } // LOG KOORD 2
+        if (!p.coordinates.every(c => typeof c === 'number' && isFinite(c))) { console.warn(`  !!! Koordinate niso števila #${index}:`, p.coordinates); return null; } // LOG KOORD 3
+        console.log(`  --> Koordinate za ${p.stevilka || `parcela #${index}`}: [${p.coordinates[0]}, ${p.coordinates[1]}] (Pred transformacijo)`); // LOG KOORD 4
+        const lon = p.coordinates[0]; const lat = p.coordinates[1];
+        if (lon < 13 || lon > 17 || lat < 45 || lat > 47) { console.warn(`  !!! Koordinate [${lon}, ${lat}] izven SLO obsega. Napačen CRS?`); } // LOG KOORD 5
         try {
-            const feature = new ol.Feature({
-                geometry: new ol.geom.Point(ol.proj.fromLonLat(parcel.coordinates)),
-                parcel: parcel // Shranimo celoten objekt parcele za kasnejši dostop
-            });
+            const transformedCoords = ol.proj.fromLonLat(p.coordinates);
+            console.log(`  --> Transformirane koordinate: [${transformedCoords[0]}, ${transformedCoords[1]}]`); // LOG KOORD 6
+            const f = new ol.Feature({ geometry: new ol.geom.Point(transformedCoords), parcel: p });
+            // Začasno poenostavljen stil
+            f.setStyle(new ol.style.Style({ image: new ol.style.Circle({ radius: 7, fill: new ol.style.Fill({ color: 'rgba(255, 0, 0, 0.8)' }), stroke: new ol.style.Stroke({ color: '#ffffff', width: 2 }) }) }));
+            console.log(`  --> Feature za ${p.stevilka || `parcela #${index}`} ustvarjen.`); // LOG KOORD 7
+            return f;
+        } catch (e) { console.error(`  !!! Napaka feature/transformaciji za ${p.stevilka}:`, e); console.error(`      Originalne koordinate:`, p.coordinates); return null; } // LOG KOORD 8
+    }).filter(f => f !== null);
 
-            // Stil markerja in oznake
-            feature.setStyle(new ol.style.Style({
-                image: new ol.style.Circle({
-                    radius: 8, // Malo manjši
-                    fill: new ol.style.Fill({ color: 'rgba(99, 102, 241, 0.7)' }), // Malo bolj prosojno
-                    stroke: new ol.style.Stroke({ color: '#ffffff', width: 2 }) // Bela obroba
-                }),
-                text: new ol.style.Text({
-                    text: parcel.stevilka || '?', // Pokaži št. ali '?'
-                    offsetY: -20, // Malo bližje markerju
-                    font: 'bold 13px Inter, sans-serif',
-                    fill: new ol.style.Fill({ color: '#ffffff' }), // Bela pisava
-                    stroke: new ol.style.Stroke({ color: '#1e293b', width: 3 }), // Temna obroba pisave
-                    backgroundFill: new ol.style.Fill({ color: 'rgba(79, 70, 229, 0.8)' }), // Temnejše ozadje
-                    padding: [4, 8, 4, 8] // Malo manj paddinga
-                })
-            }));
-            return feature;
-        } catch (e) {
-             console.error(`Napaka pri ustvarjanju feature za parcelo ${parcel.stevilka}:`, e);
-             return null;
-        }
-    }).filter(f => f !== null); // Izločimo neuspešno ustvarjene feature
-
-    // Če ni nobenega veljavnega feature-a, ne nadaljujemo
-    if (features.length === 0) {
-        console.log("Nobena parcela nima veljavnih podatkov za prikaz markerja.");
-        return;
-    }
-
-    // Ustvarimo nov vektorski sloj
-    const vectorSource = new ol.source.Vector({ features });
-    vectorLayer = new ol.layer.Vector({ 
-        source: vectorSource,
-        zIndex: 100 // Zagotovimo, da so markerji na vrhu
-     });
-
-    map.addLayer(vectorLayer);
-    console.log(`✅ Uspešno dodanih ${features.length} markerjev.`);
-
-    // Centriramo pogled na dodane markerje (z zamikom za inicializacijo)
-    setTimeout(() => {
-        try {
-            const extent = vectorSource.getExtent();
-            if (extent && extent.every(isFinite) && extent[0] !== Infinity) {
-                map.getView().fit(extent, {
-                    padding: [100, 100, 100, 100], // Rob okoli markerjev
-                    duration: 1200, // Malo počasnejša animacija
-                    maxZoom: 17 // Največji zoom ob centriranju
-                });
-                console.log('✅ Pogled centriran na nove markerje.');
-            } else {
-                 console.warn("Neveljaven extent za centriranje markerjev:", extent);
-                 resetView(); // Fallback na privzeti pogled
-            }
-        } catch (e) {
-            console.error("Napaka pri centriranju na markerje:", e);
-            resetView(); // Fallback
-        }
-    }, 300); // Kratek zamik
+    if (features.length === 0) { console.log("Noben feature ni bil ustvarjen za markerje."); return; }
+    const s = new ol.source.Vector({ features }); vectorLayer = new ol.layer.Vector({ source: s, zIndex: 100 });
+    map.addLayer(vectorLayer); console.log(`✅ Uspešno dodanih ${features.length} feature-jev v vectorLayer.`);
+    setTimeout(() => { if (!map) return; try { const e = s.getExtent(); if (e && e.every(isFinite) && e[0] !== Infinity) { map.getView().fit(e, { padding: [100, 100, 100, 100], duration: 1200, maxZoom: 17 }); console.log('✅ Pogled centriran.'); } else { console.warn("Neveljaven extent:", e); resetView(); } } catch (err) { console.error("Napaka centriranja:", err); resetView(); } }, 300);
 }
-
 
 async function loadSessionParcels() {
-    if (!sessionId) {
-        console.log('⚠️ Ni session_id, parcele iz seje ne bodo naložene.');
-        displayParcelList([]); 
-        return;
-    }
-
+    if (!sessionId) { console.log('⚠️ Ni session_id.'); displayParcelList([]); return; }
     console.log(`🔍 Nalagam parcele za session: ${sessionId}`);
     try {
-        const response = await fetch(`/api/gurs/session-parcels/${sessionId}`);
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        const data = await response.json();
-
-        console.log('📦 Podatki o parcelah iz seje:', data);
-
-        if (data.success && Array.isArray(data.parcels) && data.parcels.length > 0) {
-            console.log(`✅ Najdenih ${data.parcels.length} parcel v seji.`);
-            currentParcels = data.parcels; // Shranimo jih
-
-            addParcelMarkers(currentParcels); // Doda markerje (uporabi prave koordinate)
-            displayParcelList(currentParcels); // Posodobi seznam na desni
-
-            // Prikaz info za prvo parcelo z veljavnimi koordinatami
-            const firstValidParcel = currentParcels.find(p => Array.isArray(p.coordinates) && p.coordinates.length === 2 && p.coordinates.every(isFinite));
-            if (firstValidParcel) {
-                displayParcelInfo(firstValidParcel);
-            } else {
-                 console.log("Nobena parcela iz seje nima veljavnih koordinat za začetni prikaz info.");
-                 document.getElementById('parcelInfo').style.display = 'none';
-                 document.getElementById('emptyState').style.display = 'block';
-            }
-            // Izpis opozorila, če obstaja
-            if (data.message) {
-                 console.warn("Sporočilo s strežnika:", data.message);
-                 // TODO: Morda prikazati to sporočilo uporabniku?
-            }
-        } else {
-            console.log('⚠️ V seji ni bilo najdenih parcel ali pa API ni vrnil uspešnega odgovora.');
-            currentParcels = []; // Počistimo seznam
-            displayParcelList([]); 
-            document.getElementById('parcelInfo').style.display = 'none';
-            document.getElementById('emptyState').style.display = 'block';
-        }
-    } catch (error) {
-        console.error('❌ Kritična napaka pri nalaganju parcel iz seje:', error);
-        currentParcels = [];
-        displayParcelList([]);
-        document.getElementById('parcelInfo').style.display = 'none';
-        document.getElementById('emptyState').style.display = 'block';
-        // Morda obvestimo uporabnika?
-        // alert("Napaka pri nalaganju parcel iz projekta. Poskusite osvežiti stran.");
-    }
+        const r = await fetch(`/api/gurs/session-parcels/${sessionId}`); if (!r.ok) throw new Error(`HTTP ${r.status}`); const d = await r.json(); console.log('📦 Podatki iz seje:', d);
+        if (d.success && Array.isArray(d.parcels) && d.parcels.length > 0) {
+            console.log(`✅ Najdenih ${d.parcels.length} parcel.`); currentParcels = d.parcels;
+            addParcelMarkers(currentParcels); // KLIC MARKERJEV
+            displayParcelList(currentParcels);
+            const first = currentParcels.find(p => Array.isArray(p.coordinates) && p.coordinates.length === 2 && p.coordinates.every(isFinite));
+            if (first) { if (document.getElementById('parcelInfoContent')) { displayParcelInfo(first); console.log("Prikazujem info za prvo parcelo:", first); } else { console.warn("Element #parcelInfoContent ni najden."); } }
+            else { console.log("Ni parcel z veljavnimi koordinatami."); document.getElementById('parcelInfo').style.display = 'none'; document.getElementById('emptyState').style.display = 'block'; }
+            if (d.message) { console.warn("Sporočilo:", d.message); }
+        } else { console.log('⚠️ Ni parcel v seji.'); currentParcels = []; displayParcelList([]); document.getElementById('parcelInfo').style.display = 'none'; document.getElementById('emptyState').style.display = 'block'; }
+    } catch (e) { console.error('❌ Napaka nalaganja parcel iz seje:', e); currentParcels = []; displayParcelList([]); document.getElementById('parcelInfo').style.display = 'none'; document.getElementById('emptyState').style.display = 'block'; }
 }
-
 
 function displayParcelList(parcels) {
-    const listDiv = document.getElementById('parcelList');
-    const countSpan = document.getElementById('parcelCount');
-    const contentDiv = document.getElementById('parcelListContent');
-    if (!listDiv || !countSpan || !contentDiv) return;
-
-    if (!Array.isArray(parcels) || parcels.length === 0) {
-        listDiv.style.display = 'none'; // Skrij celoten blok, če ni parcel
-        return;
-    }
-
-    listDiv.style.display = 'block'; // Pokaži blok
-    countSpan.textContent = `(${parcels.length})`; // Pokaži število
-    
-    // Funkcija za varno formatiranje površine
-    const formatPovrsina = (parcel) => {
-        const pov = parcel?.povrsina;
-        return (typeof pov === 'number' && pov > 0) ? `${pov} m²` : 'N/A';
-    };
-
-    // Generiramo HTML za vsako parcelo
-    contentDiv.innerHTML = parcels.map((parcel, idx) => {
-        if (!parcel || !parcel.stevilka) return ''; // Preskočimo neveljavne vnose
-        return `
-            <div class="parcel-item" onclick="selectParcel(${idx})" title="Klikni za prikaz na zemljevidu">
-                <div class="parcel-number">${parcel.stevilka}</div>
-                <div class="parcel-details">
-                    ${parcel.katastrska_obcina || 'Neznana KO'} • ${formatPovrsina(parcel)}
-                </div>
-            </div>`;
-    }).join('');
+    const listDiv = document.getElementById('parcelList'); const countSpan = document.getElementById('parcelCount'); const contentDiv = document.getElementById('parcelListContent');
+    if (!listDiv || !countSpan || !contentDiv) return; if (!Array.isArray(parcels) || parcels.length === 0) { listDiv.style.display = 'none'; return; }
+    listDiv.style.display = 'block'; countSpan.textContent = `(${parcels.length})`; const formatPovrsina = (p) => (p?.povrsina > 0) ? `${p.povrsina} m²` : 'N/A';
+    contentDiv.innerHTML = parcels.map((p, idx) => (!p || !p.stevilka) ? '' : `<div class="parcel-item" onclick="selectParcel(${idx})" title="Prikaži na zemljevidu"><div class="parcel-number">${p.stevilka}</div><div class="parcel-details">${p.katastrska_obcina || 'Neznana KO'} • ${formatPovrsina(p)}</div></div>`).join('');
 }
-
 
 function selectParcel(index) {
-     // Preverimo veljavnost indeksa
-    if (typeof index !== 'number' || index < 0 || index >= currentParcels.length) {
-         console.warn(`Neveljaven indeks parcele za izbiro: ${index}`);
-         return;
-    }
-    
-    const parcel = currentParcels[index];
-    if (parcel) {
-        displayParcelInfo(parcel); // Vedno posodobimo info okno
-        
-        // Centriramo zemljevid, če imamo veljavne koordinate
-        if (Array.isArray(parcel.coordinates) && parcel.coordinates.length === 2 && parcel.coordinates.every(isFinite)) {
-            console.log(`Centriram na parcelo ${parcel.stevilka} na ${parcel.coordinates}`);
-            map.getView().animate({
-                center: ol.proj.fromLonLat(parcel.coordinates),
-                zoom: 17, // Fiksni zoom ob izbiri
-                duration: 800 // Malo hitrejša animacija
-            });
-        } else {
-            console.warn(`Izbrana parcela ${parcel.stevilka} nima veljavnih koordinat za centriranje.`);
-            // Ne prikažemo alert-a, samo info ostane
-        }
-    } else {
-        console.error(`Parcela z indeksom ${index} ni bila najdena v currentParcels.`);
-    }
+    console.log(`Izbira parcele z indeksom: ${index}`);
+    if (typeof index !== 'number' || index < 0 || index >= currentParcels.length) { console.warn(`Neveljaven indeks: ${index}`); return; } if (!map) { console.warn("selectParcel: Map not ready."); return; } const p = currentParcels[index];
+    if (p) { displayParcelInfo(p); if (Array.isArray(p.coordinates) && p.coordinates.length === 2 && p.coordinates.every(isFinite)) { console.log(`Centriram na ${p.stevilka} na ${p.coordinates}`); map.getView().animate({ center: ol.proj.fromLonLat(p.coordinates), zoom: 17, duration: 800 }); } else { console.warn(`${p.stevilka} nima koordinat.`); } }
+    else { console.error(`Parcela ${index} ni najdena.`); }
 }
 
-// Kontrole
-function zoomIn() { map?.getView()?.animate({ zoom: map.getView().getZoom() + 1, duration: 250 }); }
-function zoomOut() { map?.getView()?.animate({ zoom: map.getView().getZoom() - 1, duration: 250 }); }
-
+function zoomIn() { console.log("Klik na Zoom In"); if (!map) { console.warn("zoomIn: Map not ready."); return; } const view = map.getView(); if (!view) { console.warn("zoomIn: View not ready."); return; } view.animate({ zoom: view.getZoom() + 1, duration: 250 }); }
+function zoomOut() { console.log("Klik na Zoom Out"); if (!map) { console.warn("zoomOut: Map not ready."); return; } const view = map.getView(); if (!view) { console.warn("zoomOut: View not ready."); return; } view.animate({ zoom: view.getZoom() - 1, duration: 250 }); }
 function resetView() {
-    if (!map) return;
-    // Če imamo vektorski sloj z markerji, se osredotočimo nanj
-    if (vectorLayer && vectorLayer.getSource()?.getFeatures().length > 0) {
-         try {
-            const extent = vectorLayer.getSource().getExtent();
-             // Preverimo, ali je extent veljaven (ni neskončen ali NaN)
-             if (extent && extent.every(isFinite) && extent[0] !== Infinity) {
-                 console.log("Resetiram pogled na extent markerjev:", extent);
-                 map.getView().fit(extent, {
-                     padding: [80, 80, 80, 80], // Manj paddinga ob resetu
-                     duration: 800,
-                     maxZoom: 17
-                 });
-                 return; // Končamo tukaj
-             } else {
-                  console.warn("Neveljaven extent markerjev za reset:", extent);
-             }
-         } catch(e) { console.error("Napaka pri resetiranju pogleda na markerje:", e); }
-    }
-    
-    // Fallback: Če ni markerjev ali je extent neveljaven, gremo na privzeto lokacijo
-    console.log("Resetiram pogled na privzeto lokacijo.");
-    map.getView().animate({
-        center: ol.proj.fromLonLat(mapConfig.defaultCenter),
-        zoom: mapConfig.defaultZoom,
-        duration: 800
-    });
+    console.log("Klik na Reset View"); if (!map) { console.warn("resetView: Map not ready."); return; } const view = map.getView(); if (!view) { console.warn("resetView: View not ready."); return; }
+    if (vectorLayer && vectorLayer.getSource()?.getFeatures().length > 0) { try { const e = vectorLayer.getSource().getExtent(); if (e && e.every(isFinite) && e[0] !== Infinity) { console.log("Resetiram na markerje:", e); view.fit(e, { padding: [80, 80, 80, 80], duration: 800, maxZoom: 17 }); return; } else { console.warn("Neveljaven extent markerjev:", e); } } catch(err) { console.error("Napaka resetiranja na markerje:", err); } }
+    console.log("Resetiram na privzeto lokacijo."); view.animate({ center: ol.proj.fromLonLat(mapConfig.defaultCenter), zoom: mapConfig.defaultZoom, duration: 800 });
 }
 
-// Iskanje parcel
 async function searchParcel() {
-    const searchInput = document.getElementById('searchInput');
-    const searchBtn = document.getElementById('searchBtn');
-    if (!searchInput || !searchBtn) return; // Preverimo, ali elementi obstajajo
-    
-    const query = searchInput.value.trim();
-    if (!query) {
-        alert('Vnesite iskalni niz (npr. "940/1 Hotič" ali samo "940/1").');
-        return;
-    }
-
-    searchBtn.disabled = true;
-    searchBtn.textContent = 'Iščem...';
-
+    console.log("Klik na Search Parcel"); const searchInput = document.getElementById('searchInput'); const searchBtn = document.getElementById('searchBtn');
+    if (!searchInput || !searchBtn) { console.warn("searchParcel: Elementi niso najdeni."); return; } if (!map) { console.warn("searchParcel: Map not ready."); alert("Zemljevid se še nalaga."); return; } const query = searchInput.value.trim(); if (!query) { alert('Vnesite iskalni niz.'); return; }
+    searchBtn.disabled = true; searchBtn.textContent = 'Iščem...';
     try {
-        console.log(`Začenjam iskanje parcele: "${query}"`);
-        const response = await fetch(`/api/gurs/search-parcel?query=${encodeURIComponent(query)}`);
-        if (!response.ok) {
-            throw new Error(`HTTP napaka! Status: ${response.status}`);
-        }
-        const data = await response.json();
-        console.log("Odgovor iskanja:", data);
-
-        if (data.success && Array.isArray(data.parcels) && data.parcels.length > 0) {
-            console.log(`Iskanje uspešno, najdenih ${data.parcels.length} parcel.`);
-            currentParcels = data.parcels; // Zamenjamo trenutne parcele z rezultati iskanja
-            
-            addParcelMarkers(currentParcels); // Doda markerje in centrira pogled
-            displayParcelList(currentParcels); // Posodobi seznam na desni
-
-            // Prikaz info za prvo najdeno parcelo
-            if (data.parcels[0]) {
-                displayParcelInfo(data.parcels[0]);
-            }
-            
-        } else {
-             console.warn("Iskanje parcele ni vrnilo rezultatov ali ni bilo uspešno.");
-             // Sporočilo uporabniku - bolj specifično, če je mogoče
-             let message = 'Parcela ni najdena.';
-             if (query.includes('/') && !query.match(/\s\D/)) { // Če je verjetno samo št. brez KO
-                 message += ' Poskusite dodati ime katastrske občine (npr. "940/1 Hotič").';
-             }
-             alert(message);
-             // Ne spreminjamo seznama parcel ali markerjev, če iskanje ne uspe
-        }
-    } catch (error) {
-        console.error('❌ Kritična napaka pri iskanju parcele:', error);
-        alert('Napaka pri komunikaciji s strežnikom med iskanjem parcele.');
-    } finally {
-        // Ponastavimo gumb ne glede na rezultat
-        searchBtn.disabled = false;
-        searchBtn.textContent = 'Išči';
-    }
+        console.log(`Iščem: "${query}"`); const r = await fetch(`/api/gurs/search-parcel?query=${encodeURIComponent(query)}`); if (!r.ok) { throw new Error(`HTTP ${r.status}`); } const d = await r.json(); console.log("Odgovor iskanja:", d);
+        if (d.success && Array.isArray(d.parcels) && d.parcels.length > 0) { console.log(`Najdenih ${d.parcels.length}.`); currentParcels = d.parcels; addParcelMarkers(currentParcels); displayParcelList(currentParcels); if (d.parcels[0]) { displayParcelInfo(d.parcels[0]); } }
+        else { console.warn("Iskanje ni vrnilo rezultatov."); let msg = 'Parcela ni najdena.'; if (query.includes('/') && !query.match(/\s\D/)) { msg += ' Poskusite dodati ime katastrske občine.'; } alert(msg); }
+    } catch (e) { console.error('❌ Napaka iskanja:', e); alert('Napaka pri iskanju.'); }
+    finally { searchBtn.disabled = false; searchBtn.textContent = 'Išči'; }
 }
 
-
-function scheduleMapStateSave() {
-    if (!sessionId) return; // Ne shranjujemo, če ni seje
-    if (mapStateTimer) clearTimeout(mapStateTimer); // Počistimo prejšnji timer
-    // Shranimo z zakasnitvijo po koncu premikanja
-    mapStateTimer = setTimeout(saveMapState, 1500); // Malo daljša zakasnitev
-}
-
+function scheduleMapStateSave() { if (!sessionId) return; if (mapStateTimer) clearTimeout(mapStateTimer); mapStateTimer = setTimeout(saveMapState, 1500); }
 async function saveMapState() {
-    if (!sessionId || !map) return; // Preverimo pogoje
-    
-    const view = map.getView();
-    const center3857 = view.getCenter(); // Center v EPSG:3857
-    if (!center3857) {
-        console.warn("Ne morem dobiti centra pogleda za shranjevanje.");
-        return;
-    }
-
+    if (!sessionId || !map) return; const v = map.getView(); const c3857 = v.getCenter(); if (!c3857) { console.warn("Ni centra."); return; }
     try {
-        const centerLonLat = ol.proj.toLonLat(center3857); // Pretvorimo v Lon/Lat (EPSG:4326)
-        const zoom = view.getZoom(); // Dobimo nivo zooma (lahko je decimalno)
-        
-        // Preverimo veljavnost vrednosti
-        if (!centerLonLat || centerLonLat.length < 2 || !centerLonLat.every(isFinite) || !isFinite(zoom)) {
-            console.warn('Neveljavne vrednosti pogleda za shranjevanje:', centerLonLat, zoom);
-            return;
-        }
-
-        const payload = {
-            center_lon: Number(centerLonLat[0].toFixed(6)), // Zaokrožimo lon
-            center_lat: Number(centerLonLat[1].toFixed(6)), // Zaokrožimo lat
-            zoom: Math.round(zoom) // Zaokrožimo zoom na celo število
-        };
-
-        // Pošljemo na strežnik
-        const response = await fetch(`/api/gurs/map-state/${encodeURIComponent(sessionId)}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        if (response.ok) {
-            console.log('💾 Stanje zemljevida uspešno shranjeno:', payload);
-        } else {
-             console.warn(`⚠️ Napaka pri shranjevanju stanja zemljevida: ${response.status} ${response.statusText}`);
-        }
-    } catch (error) {
-        // Ujamemo napake pri pretvorbi koordinat ali pri fetch klicu
-        console.error('❌ Napaka pri shranjevanju stanja zemljevida:', error);
-    }
+        const cLL = ol.proj.toLonLat(c3857); const z = v.getZoom(); if (!cLL || cLL.length < 2 || !cLL.every(isFinite) || !isFinite(z)) { console.warn('Neveljaven pogled:', cLL, z); return; } const p = { center_lon: Number(cLL[0].toFixed(6)), center_lat: Number(cLL[1].toFixed(6)), zoom: Math.round(z) };
+        const r = await fetch(`/api/gurs/map-state/${encodeURIComponent(sessionId)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) });
+        if (r.ok) { console.log('💾 Stanje shranjeno:', p); } else { console.warn(`⚠️ Napaka shranjevanja: ${r.status}`); }
+    } catch (e) { console.error('❌ Napaka shranjevanja:', e); }
 }
+function setupSearchInputEnter() { const si = document.getElementById('searchInput'); if (si) { si.addEventListener('keypress', (e) => { if (e.key === 'Enter') { e.preventDefault(); searchParcel(); } }); } }
 
-// Enter za iskanje - dodano preprečevanje oddaje forme
-document.addEventListener('DOMContentLoaded', function() {
-    const searchInput = document.getElementById('searchInput');
-    if (searchInput) {
-        searchInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault(); // Pomembno: prepreči oddajo forme, če je input v formi
-                searchParcel(); // Sproži iskanje
-            }
-        });
-    }
-});
-
-console.log('✅ GURS zemljevid modul naložen in pripravljen.');
+console.log('✅ GURS zemljevid modul v2.5 naložen.');
