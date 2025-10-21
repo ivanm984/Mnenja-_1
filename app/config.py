@@ -114,7 +114,7 @@ GURS_RASTER_WMS_URL = os.getenv(
 
 GURS_WFS_URL = os.getenv(
     "GURS_WFS_URL",
-    "https://ipi.eprostor.gov.si/wfs-si-gurs-kn/wfs"  # Kataster WFS (KN)
+    "https://ipi.eprostor.gov.si/wfs-si-gurs-kn-osnovni/wfs"  # ✅ POPRAVLJEN: Kataster WFS (KN Osnovni)
 )
 
 # URL za namensko rabo (Register Prostorskih Enot - RPE) - Ohranimo za vsak slučaj, čeprav ga zdaj ne rabimo za privzeti sloj

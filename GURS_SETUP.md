@@ -1,5 +1,19 @@
 # 🗺️ GURS Zemljevid - Navodila za Nastavitev
 
+## 🔴 KRITIČNO: Napačen WFS URL (POPRAVLJENO)
+
+**V verziji pred 2025-10-21 je aplikacija uporabljala NAPAČEN WFS URL!**
+
+### ✅ POPRAVEK:
+- **Star URL** (napačen): `https://ipi.eprostor.gov.si/wfs-si-gurs-kn/wfs`
+- **Nov URL** (pravilen): `https://ipi.eprostor.gov.si/wfs-si-gurs-kn-osnovni/wfs`
+
+**Razlika:** Manjka `-osnovni` na koncu URL-ja!
+
+Ta popravek omogoča pravilno iskanje parcel preko WFS.
+
+---
+
 ## ⚠️ POMEMBNO: Vklop GURS API
 
 Aplikacija trenutno uporablja **simulirane podatke** namesto pravih GURS podatkov!
