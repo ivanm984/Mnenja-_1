@@ -195,11 +195,13 @@ function buildLayerSelectors() {
         try {
             const label = document.createElement('label'); label.className = 'layer-option' + (isActive ? ' active' : ''); label.setAttribute('data-layer-id', cfg.id); label.title = cfg.description || cfg.title || cfg.id;
             const input = document.createElement('input'); input.type = 'checkbox'; input.value = cfg.id; input.checked = isActive; input.disabled = cfg.always_on || false;
-            // PREJŠNJA NAPAKA: Event listener je bil vezan na label, ampak je moral biti vezan na input za checkbox pravilno delovanje
-            // label.addEventListener('click', ...); // Stara, napačna koda
-            input.addEventListener('change', (e) => { // ✅ POPRAVLJENO: Listener na 'change' dogodek input elementa
+            // ✅ POPRAVLJENO: Event listener na label element (ne na skrit input element)
+            label.addEventListener('click', (e) => {
                  if (input.disabled) { e.preventDefault(); return; }
-                 toggleOverlayLayer(cfg.id, e.target.checked); // Posredujemo novo stanje (true/false)
+                 // Spremenimo stanje checkboxa
+                 const newCheckedState = !input.checked;
+                 input.checked = newCheckedState;
+                 toggleOverlayLayer(cfg.id, newCheckedState);
             });
             const span = document.createElement('span'); span.textContent = `${LAYER_ICONS[cfg.id] || '🗂️'} ${cfg.title || cfg.id}`;
             if (input.disabled) { span.style.opacity = '0.7'; span.title = "Vedno vklopljen"; }
