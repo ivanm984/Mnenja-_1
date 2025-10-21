@@ -71,12 +71,21 @@ V XML-ju je bilo jasno vidno, da strežnik pričakuje URL z `-osnovni` končnico
 
 ### Razpoložljivi WFS sloji:
 
-Po pravilnem URL-ju so dostopni:
-- `SI.GURS.KN:PARCELE_TABELA` - Parcele (tabela)
-- `SI.GURS.KN:STAVBE_TABELA` - Stavbe (tabela)
+Po pravilnem URL-ju so dostopni **41 slojev**, vsi z končnico `_TABELA`:
+
+**Ključni sloji:**
+- `SI.GURS.KN:PARCELE_TABELA` - Parcele (geometrija, številke)
+- `SI.GURS.KN:STAVBE_TABELA` - Stavbe
 - `SI.GURS.KN:KATASTRSKE_OBCINE_TABELA` - Katastrske občine
-- `SI.GURS.KN:NAMENSKE_RABE_TABELA` - Namenska raba (tabela!)
-- ... in mnogo drugih
+- `SI.GURS.KN:NAMENSKE_RABE_TABELA` - Namenska raba (povezovalna tabela!)
+- `SI.GURS.KN:PARCELE_X_NAMENSKE_RABE_TABELA` - Parcele ↔ Namenska raba
+- `SI.GURS.KN:DEJANSKE_RABE_TABELA` - Dejanska raba
+- `SI.GURS.KN:HISNE_STEVILKE_TABELA` - Hišne številke
+
+**POMEMBNO:**
+- **WFS sloji** imajo končnico `_TABELA` (npr. `SI.GURS.KN:PARCELE_TABELA`)
+- **WMS sloji** nimajo končnice `_TABELA` (npr. `SI.GURS.KN:PARCELE`)
+- **To sta 2 različna sistema!**
 
 **Koordinatni sistem:** EPSG:3794 (D96/TM - Slovenski)
 

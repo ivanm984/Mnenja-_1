@@ -150,7 +150,14 @@ ENABLE_REAL_GURS_API = os.getenv("ENABLE_REAL_GURS_API", "false").lower() == "tr
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
 # ==========================================
-# GURS WMS SLOJI (POPRAVLJENO z NEP_ imeni)
+# GURS WMS SLOJI
+# ==========================================
+# POMEMBNO: WMS in WFS uporabljata RAZLIČNA imena slojev!
+# - WMS sloji: SI.GURS.KN:PARCELE (kratko ime, brez _TABELA)
+# - WFS sloji: SI.GURS.KN:PARCELE_TABELA (z _TABELA končnico)
+#
+# Ta konfiguracija je za WMS (prikaz na zemljevidu)!
+# WFS imena so v gurs_routes.py
 # ==========================================
 
 GURS_WMS_LAYERS = {
