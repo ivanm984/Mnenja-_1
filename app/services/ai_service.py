@@ -31,12 +31,21 @@ class AIService:
 
     def __init__(self):
         """Inicializacija AI serviса z modeli."""
-        self._fast_json_config = {"response_mime_type": "application/json"}
+        # NOTE: response_mime_type je podprt samo v SDK verziji 0.8.0+
+        # Za SDK 0.4.0 se zanašamo na prompt, da AI vrne JSON
+        self._fast_json_config = {
+            "temperature": 0.0,
+            "top_p": 0.9,
+            "top_k": 40,
+            "max_output_tokens": 8192,
+        }
         self._fast_json_model = genai.GenerativeModel(
             FAST_MODEL_NAME, generation_config=self._fast_json_config
         )
+        # Remove response_mime_type from GEN_CFG for powerful model
+        gen_cfg_without_mime = {k: v for k, v in GEN_CFG.items() if k != "response_mime_type"}
         self._powerful_model = genai.GenerativeModel(
-            POWERFUL_MODEL_NAME, generation_config=GEN_CFG
+            POWERFUL_MODEL_NAME, generation_config=gen_cfg_without_mime
         )
         self._analysis_semaphore = asyncio.Semaphore(max(1, GEMINI_ANALYSIS_CONCURRENCY))
 
