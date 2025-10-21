@@ -1,5 +1,5 @@
 # app/gurs_routes.py
-# POSODOBLJENA VERZIJA (z POENOSTAVLJENIM 'PARCELA' filtrom v WFS)
+# POSODOBLJENA VERZIJA 2.1 (Popravki za delež rabe in osveževanje KO)
 
 from __future__ import annotations
 
@@ -32,7 +32,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/gurs", tags=["GURS"])
 
 GURS_MAP_HTML = PROJECT_ROOT / "app" / "gurs_map.html"
-PARCEL_COORD_CACHE: Dict[str, List[float]] = {}
+# Spremenjeno: Boljši cache, ki hrani koordinate IN namensko rabo
+PARCEL_DATA_CACHE: Dict[str, Dict[str, Any]] = {}
+
 
 @router.get("/map", response_class=HTMLResponse)
 async def gurs_map_page():
@@ -64,14 +66,22 @@ async def save_map_state(session_id: str, payload: MapStatePayload):
 async def search_parcel(query: str = Query(..., description="Parcela številka (npr. 123/5 Hotič)")):
     logger.info(f"[GURS] Iskanje parcele: {query}"); query_clean = query.strip(); parcel_no, ko_hint = _parse_query_for_parcel(query_clean)
     if not parcel_no: raise HTTPException(status_code=400, detail="Vnesite vsaj številko parcele.")
+    
     parcels: List[Dict[str, Any]] = []
+    
     if ENABLE_REAL_GURS_API:
-        if parcel_no and ko_hint: logger.debug(f"[GURS] Iščem WFS: parcela='{parcel_no}', ko='{ko_hint}'"); parcels = await _search_parcel_via_wfs(parcel_no, ko_hint)
-        elif parcel_no: logger.debug(f"[GURS] Iščem WFS samo po parceli: '{parcel_no}'"); parcels = await _search_parcel_via_wfs(parcel_no, None)
+        logger.debug(f"[GURS] Iščem WFS: parcela='{parcel_no}', ko='{ko_hint}'")
+        parcels_features = await _fetch_parcel_features(parcel_no, ko_hint)
+        if parcels_features:
+            parcels = [_build_parcel_payload(f) for f in parcels_features]
+        else:
+            parcels = []
+
     if not parcels:
         logger.debug("[GURS] WFS ni vrnil rezultatov ali ni vklopljen -> simulacija"); parcel_no = parcel_no or "123/4"
         mock_parcel = {"stevilka": parcel_no, "katastrska_obcina": ko_hint or "Simulirana KO", "coordinates": get_mock_coordinates(f"{parcel_no}-{ko_hint or ''}"), "povrsina": abs(hash(parcel_no) % 2000) + 500, "namenska_raba": "SSe (Simulirano)"}
         parcels = [mock_parcel]
+        
     return {"success": True, "parcels": parcels}
 
 @router.get("/session-parcels/{session_id}")
@@ -80,20 +90,52 @@ async def get_session_parcels(session_id: str):
     if not data: raise HTTPException(status_code=404, detail="Seja ne obstaja ali je potekla")
     parcels = extract_parcels_from_session(data); logger.info(f"[GURS] Iz seje ekstrahiranih {len(parcels)} parcel")
     if not parcels: return {"success": True, "parcels": [], "message": "V dokumentih niso bile najdene parcele."}
+    
     parcels_with_coords, not_found_count = [], 0
+    
     for parcel in parcels:
         stevilka, ko = parcel.get("stevilka"), parcel.get("katastrska_obcina")
         if not stevilka: logger.warning(f"[GURS] Preskočena parcela brez številke: {parcel}"); continue
-        coords = await _resolve_parcel_coordinates(stevilka, ko)
-        mock_coords_key = _parcel_cache_key(stevilka, ko)
-        is_mock, mock_gen_coords = False, get_mock_coordinates(mock_coords_key)
-        if coords and len(coords) == 2 and len(mock_gen_coords) == 2:
-             if abs(coords[0] - mock_gen_coords[0]) < 1e-9 and abs(coords[1] - mock_gen_coords[1]) < 1e-9: is_mock = True
-        if is_mock: logger.warning(f"[GURS] Parcela {stevilka} (KO: {ko or 'N/A'}) ni najdena z WFS -> mock koordinate."); not_found_count += 1
-        parcel["coordinates"] = coords; parcels_with_coords.append(parcel)
-        logger.info(f"[GURS] Parcela {stevilka} (KO: {ko or 'N/A'}): Koordinate {coords}{' (Mock)' if is_mock else ''}")
+
+        parcel_details = await _resolve_parcel_details(stevilka, ko)
+        
+        is_mock = False
+        if parcel_details:
+            # === POPRAVEK: Uporabi celoten WFS payload ===
+            # Shranimo originalno namensko rabo iz AI, če WFS ne vrne nič
+            ai_namenska_raba = parcel.get("namenska_raba")
+            
+            # Posodobimo celoten "parcel" slovar s podatki iz WFS (tudi 'katastrska_obcina')
+            parcel.update(parcel_details)
+            
+            # Če WFS ni vrnil namenske rabe (ker je 'Ni podatka...'), obdržimo tisto iz AI
+            if parcel.get("namenska_raba", "Ni podatka").startswith("Ni podatka"):
+                parcel["namenska_raba"] = ai_namenska_raba
+            # === KONEC POPRAVKA ===
+            
+            # Preverimo, ali so koordinate morda mock
+            mock_coords_key = _parcel_cache_key(stevilka, ko)
+            mock_gen_coords = get_mock_coordinates(mock_coords_key)
+            coords = parcel["coordinates"]
+            if coords and len(coords) == 2 and len(mock_gen_coords) == 2:
+                if abs(coords[0] - mock_gen_coords[0]) < 1e-9 and abs(coords[1] - mock_gen_coords[1]) < 1e-9:
+                    is_mock = True
+        else:
+            # WFS ni našel nič, uporabimo mock koordinate
+            parcel["coordinates"] = get_mock_coordinates(_parcel_cache_key(stevilka, ko))
+            is_mock = True
+
+        if is_mock:
+            logger.warning(f"[GURS] Parcela {stevilka} (KO: {ko or 'N/A'}) ni najdena z WFS -> mock koordinate.")
+            not_found_count += 1
+            
+        parcels_with_coords.append(parcel)
+        # Logiramo posodobljeno ime KO
+        logger.info(f"[GURS] Parcela {stevilka} (KO: {parcel.get('katastrska_obcina') or 'N/A'}): Koordinate {parcel.get('coordinates')}{' (Mock)' if is_mock else ''}, Raba: {parcel.get('namenska_raba')}")
+
     message = f"Opozorilo: Za {not_found_count} od {len(parcels)} parcel ni bilo mogoče pridobiti točne lokacije." if not_found_count > 0 else None
     return {"success": True, "parcels": parcels_with_coords, "message": message}
+
 
 def extract_parcels_from_session(session_data: Dict[str, Any]) -> List[Dict[str, str]]:
     parcels = []; key_data = session_data.get("key_data", {})
@@ -103,8 +145,11 @@ def extract_parcels_from_session(session_data: Dict[str, Any]) -> List[Dict[str,
     ko_match = re.search(r"k\.?o\.?\s*([\w\s\-]+)", vse_parcele_str, re.IGNORECASE); katastrska_obcina = ko_match.group(1).strip() if ko_match else None
     if not katastrska_obcina and gradbena_parcela: ko_match_grad = re.search(r"k\.?o\.?\s*([\w\s\-]+)", gradbena_parcela, re.IGNORECASE); katastrska_obcina = ko_match_grad.group(1).strip() if ko_match_grad else None
     katastrska_obcina = katastrska_obcina or None; logger.info(f"[GURS] Ugotovljena KO: '{katastrska_obcina}'")
-    ai_details = session_data.get("ai_details", {}); namenska_raba_list = ai_details.get("namenska_raba", []); namenska_raba = namenska_raba_list[0] if namenska_raba_list else "Ni podatka"
-    logger.info(f"[GURS] Namenska raba: '{namenska_raba}'")
+    
+    ai_details = session_data.get("ai_details", {}); namenska_raba_list = ai_details.get("namenska_raba", []); 
+    namenska_raba = namenska_raba_list[0] if namenska_raba_list else "Ni podatka"
+    logger.info(f"[GURS] Namenska raba (iz AI): '{namenska_raba}'")
+    
     velikost_int = 0
     try:
         velikost_match = re.search(r"(\d+[\.,]?\d*)", velikost_str);
@@ -112,6 +157,7 @@ def extract_parcels_from_session(session_data: Dict[str, Any]) -> List[Dict[str,
         else: numbers = re.findall(r"(\d+[\.,]?\d*)", velikost_str); velikost_int = sum(int(float(n.replace(',', '.'))) for n in numbers) if numbers else 0
     except Exception as e: logger.warning(f"[GURS] Napaka pri parsanju velikosti '{velikost_str}': {e}")
     logger.info(f"[GURS] Parsana skupna velikost: {velikost_int} m²")
+    
     parcela_numbers = []
     if vse_parcele_str:
         parcele_brez_ko = re.sub(r"k\.?o\.?.*", "", vse_parcele_str, flags=re.IGNORECASE).strip()
@@ -125,6 +171,7 @@ def extract_parcels_from_session(session_data: Dict[str, Any]) -> List[Dict[str,
                     parcela_numbers.append(p_final.group(1))
         parcela_numbers = [p for p in parcela_numbers if p] 
     logger.info(f"[GURS] Najdene parcele iz 'vse parcele': {parcela_numbers}")
+    
     if parcela_numbers:
         povrsina_per_parcel = (velikost_int // len(parcela_numbers)) if velikost_int > 0 and len(parcela_numbers) > 0 else 0
         for parcela_num in parcela_numbers: parcels.append({"stevilka": parcela_num, "katastrska_obcina": katastrska_obcina, "povrsina": povrsina_per_parcel, "namenska_raba": namenska_raba})
@@ -132,6 +179,7 @@ def extract_parcels_from_session(session_data: Dict[str, Any]) -> List[Dict[str,
         gradbena_brez_ko = re.sub(r"k\.?o\.?.*", "", gradbena_parcela, flags=re.IGNORECASE).strip(); gradbena_match = re.match(r'^([\d/]+)', gradbena_brez_ko)
         if gradbena_match: parcela_num = gradbena_match.group(1); logger.info(f"[GURS] Uporabljam gradbeno parcelo: '{parcela_num}'"); parcels.append({"stevilka": parcela_num, "katastrska_obcina": katastrska_obcina, "povrsina": velikost_int, "namenska_raba": namenska_raba})
         else: logger.warning(f"[GURS] Gradbena parcela '{gradbena_parcela}' nima prepoznavne številke.")
+    
     unique_parcels, seen = [], set()
     for p in parcels:
         key = (p.get('stevilka'), p.get('katastrska_obcina'))
@@ -140,6 +188,7 @@ def extract_parcels_from_session(session_data: Dict[str, Any]) -> List[Dict[str,
             seen.add(key)
         else:
             logger.debug(f"[GURS] Odstranjen duplikat: {p.get('stevilka')} KO: {p.get('katastrska_obcina')}")
+    
     logger.info(f"[GURS] === Končni seznam parcel: {len(unique_parcels)} ===")
     for i, p in enumerate(unique_parcels, 1): logger.info(f"[GURS] Parcela {i}: {p.get('stevilka')} (KO: {p.get('katastrska_obcina') or 'N/A'}) Pov.: {p.get('povrsina')}")
     return unique_parcels
@@ -147,16 +196,19 @@ def extract_parcels_from_session(session_data: Dict[str, Any]) -> List[Dict[str,
 def get_mock_coordinates(parcela_key: str) -> List[float]:
     base_lon, base_lat = 14.8267, 46.0569; hash_val = abs(hash(parcela_key))
     offset_lon, offset_lat = ((hash_val % 4000) - 2000) * 0.00002, (((hash_val // 4000) % 4000) - 2000) * 0.00002
-    lon, lat = base_lon + offset_lon, base_lat + offset_lat
+    lon, lat = base_lon + offset_lon, base_lat + offset_lon
     logger.debug(f"[GURS] Mock koordinate za '{parcela_key}': [{lon:.6f}, {lat:.6f}]"); return [lon, lat]
 
 @router.get("/parcel-info/{parcela_st}")
 async def get_parcel_info(parcela_st: str, ko: Optional[str] = Query(None, description="Katastrska občina")):
     logger.info(f"[GURS] Info za parcelo: {parcela_st}, K.O.: {ko}")
     if ENABLE_REAL_GURS_API:
-        parcels = await _search_parcel_via_wfs(parcela_st, ko)
-        if parcels: return {"success": True, "parcel": parcels[0]}
-        else: logger.warning(f"WFS ni našel {parcela_st} (KO: {ko}) za podrobnosti.")
+        parcels_features = await _fetch_parcel_features(parcela_st, ko)
+        if parcels_features: 
+            return {"success": True, "parcel": _build_parcel_payload(parcels_features[0])}
+        else: 
+            logger.warning(f"WFS ni našel {parcela_st} (KO: {ko}) za podrobnosti.")
+            
     mock_key = f"{parcela_st}-{ko or ''}"
     return {"success": True, "parcel": {"stevilka": parcela_st, "katastrska_obcina": ko or "Simulirana KO", "povrsina": abs(hash(parcela_st) % 2000) + 500, "namenska_raba": "SSe (Simulirano)", "lastniki": "Zaščiteno (Simulirano)", "obremenjenja": "Ni (Simulirano)", "coordinates": get_mock_coordinates(mock_key)},
         "message": "Uporabljeni simulirani podatki." if not ENABLE_REAL_GURS_API else "Parcela ni najdena -> simulirani podatki."}
@@ -174,7 +226,7 @@ async def get_wms_capabilities():
 def _build_layer_payload(layer_id: str, layer_cfg: Dict[str, Any]) -> Dict[str, Any]:
     default_url = GURS_WMS_URL;
     if layer_id == 'ortofoto': default_url = GURS_RASTER_WMS_URL
-    # elif layer_id == 'namenska_raba': default_url = GURS_RPE_WMS_URL # Ne več
+    elif layer_id == 'namenska_raba': default_url = GURS_RPE_WMS_URL # Popravljeno: Ta sloj uporablja RPE URL
     return {"id": layer_id, "name": layer_cfg.get("name"), "title": layer_cfg.get("title", layer_id), "description": layer_cfg.get("description", ""), "url": layer_cfg.get("url", default_url), "format": layer_cfg.get("format", "image/png"), "transparent": layer_cfg.get("transparent", True), "default_visible": layer_cfg.get("default_visible", False), "always_on": layer_cfg.get("always_on", False), "category": layer_cfg.get("category", "overlay")}
 
 def _parse_wms_capabilities(xml_text: str) -> List[Dict[str, Any]]:
@@ -199,7 +251,70 @@ def _parse_query_for_parcel(query: str) -> tuple[Optional[str], Optional[str]]:
     if parcel_no: parcel_no = re.sub(r'[.,]$', '', parcel_no)
     logger.debug(f"Parsano iz '{query}': parcela='{parcel_no}', ko='{ko_hint}'"); return parcel_no, ko_hint
 
-# === POPRAVLJENA FUNKCIJA _fetch_parcel_features (samo PARCELA filter) ===
+def _extract_ko_id(ko_hint: Optional[str]) -> Optional[int]:
+    if not ko_hint:
+        return None
+    match = re.search(r'(\d{3,5})$', ko_hint.strip()) 
+    if match:
+        try:
+            return int(match.group(1))
+        except ValueError:
+            pass
+    match = re.search(r'(\d{3,5})', ko_hint.strip()) 
+    if match:
+        try:
+            return int(match.group(1))
+        except ValueError:
+            pass
+    logger.warning(f"[GURS] Iz 'ko_hint' ('{ko_hint}') ni bilo mogoče ekstrahirati KO_ID.")
+    return None
+
+async def _fetch_parcel_land_use(eid_parcela: str, client: httpx.AsyncClient) -> List[Dict[str, Any]]:
+    if not eid_parcela:
+        logger.warning("[GURS] WFS Namenska Raba: Manjka EID_PARCELA.")
+        return []
+    
+    type_name = "SI.GURS.KN:PARCELE_X_NAMENSKE_RABE_TABELA"
+    eid_parcela_escaped = eid_parcela.replace("'", "''")
+    cql_filter = f"EID_PARCELA='{eid_parcela_escaped}'"
+    
+    params = {
+        "service": "WFS",
+        "request": "GetFeature",
+        "version": "2.0.0",
+        "outputFormat": "application/json",
+        "srsName": "EPSG:4326", 
+        "typeName": type_name,
+        "cql_filter": cql_filter,
+        "count": 10 
+    }
+    
+    try:
+        logger.debug(f"[GURS] WFS Poizvedba (Namenska Raba): Filter={cql_filter}")
+        response = await client.get(GURS_WFS_URL, params=params)
+        
+        if response.status_code == 400:
+            logger.warning(f"[GURS] WFS Namenska Raba 400 Bad Request: {response.text[:200]}")
+            return []
+            
+        response.raise_for_status()
+        data = response.json()
+        features = data.get("features", [])
+        
+        if features:
+            logger.info(f"[GURS] Najdenih {len(features)} namenskih rab za EID_PARCELA={eid_parcela}")
+            return features
+        else:
+            logger.debug(f"[GURS] Ni namenskih rab za EID_PARCELA={eid_parcela}")
+            return []
+            
+    except httpx.HTTPStatusError as exc:
+        logger.warning(f"[GURS] WFS Namenska Raba HTTPStatusError {exc.response.status_code}: {exc.response.text[:200]}")
+        return []
+    except Exception as exc:
+        logger.error(f"[GURS] WFS Namenska Raba Splošna napaka: {exc}", exc_info=True)
+        return []
+
 async def _fetch_parcel_features(parcel_no: str, ko_hint: Optional[str]) -> List[Dict[str, Any]]:
     parcel_no_clean = parcel_no.strip().replace(" ", "")
     if not parcel_no_clean: 
@@ -214,104 +329,132 @@ async def _fetch_parcel_features(parcel_no: str, ko_hint: Optional[str]) -> List
         "count": 15
     }
 
-    # === POPRAVLJEN FILTER - uporabi ST_PARCE namesto PARCELA ===
     cql_filter_parts = []
+    
     if parcel_no_clean:
-        cql_filter_parts.append(f"ST_PARCE='{parcel_no_clean}'")  # ✅ POPRAVLJENO
-        logger.debug(f"WFS Filter: Uporabljam ST_PARCE='{parcel_no_clean}'")
+        cql_filter_parts.append(f"ST_PARCELE='{parcel_no_clean}'")
+        logger.debug(f"WFS Filter: Uporabljam ST_PARCELE='{parcel_no_clean}'")
     else:
         logger.warning("[GURS] WFS: Manjka številka parcele za filter.")
         return []
         
-    # Dodaj filter po KO, če je podan
-    if ko_hint:
-        ko_clean = ko_hint.strip()
-        ko_escaped = ko_clean.replace("'", "''")
-        cql_filter_parts.append(f"IME_KO='{ko_escaped}'")
-        logger.debug(f"WFS Filter: Dodajam IME_KO='{ko_escaped}'")
+    ko_id_num = _extract_ko_id(ko_hint)
+    if ko_id_num:
+        cql_filter_parts.append(f"KO_ID={ko_id_num}") 
+        logger.debug(f"WFS Filter: Dodajam KO_ID={ko_id_num} (iz '{ko_hint}')")
+    elif ko_hint:
+        logger.warning(f"[GURS] WFS: 'ko_hint' ('{ko_hint}') je podan, a KO_ID ni bil ekstrahiran. Iščem samo po št. parcele, kar morda vrne preveč zadetkov.")
         
     if not cql_filter_parts: 
         logger.warning("[GURS] WFS: Ni filtra.")
         return []
         
     full_cql_filter = " AND ".join(cql_filter_parts)
-
-    # ✅ POPRAVLJENO: WFS sloj ima končnico _TABELA
-    # WMS sloji: SI.GURS.KN:PARCELE (brez _TABELA)
-    # WFS sloji: SI.GURS.KN:PARCELE_TABELA (z _TABELA)
-    type_names = ["SI.GURS.KN:PARCELE_TABELA"]
+    type_name = "SI.GURS.KN:PARCELE_TABELA" 
 
     async with httpx.AsyncClient(timeout=GURS_API_TIMEOUT) as client:
-        for type_name in type_names:
-            params = params_base | {
-                "typeName": type_name, 
-                "typeNames": type_name, 
-                "cql_filter": full_cql_filter
-            }
-            try:
-                logger.debug(f"[GURS] WFS Poizvedba: URL={GURS_WFS_URL}, Params={params}")
-                response = await client.get(GURS_WFS_URL, params=params)
-                
-                if response.status_code == 400:
-                    error_text = "Neznana napaka"
-                    try:
-                        root = ET.fromstring(response.text)
-                        ns = {'ows': 'http://www.opengis.net/ows/1.1'}
-                        exception_node = root.find('.//ows:ExceptionText', ns)
-                        if exception_node is not None and exception_node.text:
-                            error_text = exception_node.text.strip()
-                    except ET.ParseError:
-                        error_text = response.text[:200].strip()
+        params = params_base | {
+            "typeName": type_name, 
+            "typeNames": type_name, 
+            "cql_filter": full_cql_filter
+        }
+        try:
+            logger.debug(f"[GURS] WFS Poizvedba (Parcela): URL={GURS_WFS_URL}, Params={params}")
+            response = await client.get(GURS_WFS_URL, params=params)
+            
+            if response.status_code == 400:
+                error_text = "Neznana napaka"
+                try:
+                    root = ET.fromstring(response.text)
+                    ns = {'ows': 'http://www.opengis.net/ows/1.1'}
+                    exception_node = root.find('.//ows:ExceptionText', ns)
+                    if exception_node is not None and exception_node.text:
+                        error_text = exception_node.text.strip()
+                except ET.ParseError:
+                    error_text = response.text[:200].strip()
 
-                    logger.warning(f"[GURS] WFS 400 Bad Request: Type={type_name}, Filter={full_cql_filter}, Napaka: {error_text}")
-                    continue
+                logger.warning(f"[GURS] WFS 400 Bad Request: Type={type_name}, Filter={full_cql_filter}, Napaka: {error_text}")
+                return []
+            
+            response.raise_for_status()
+            data = response.json()
+            features = data.get("features", [])
+            
+            if features:
+                logger.info(f"[GURS] Najdenih {len(features)} parcel prek WFS. Pridobivam namensko rabo zanjo...")
                 
-                response.raise_for_status()
-                data = response.json()
-                features = data.get("features", [])
-                
-                if features:
-                    logger.info(f"[GURS] Najdenih {len(features)} parcel prek WFS (Type={type_name}, Filter={full_cql_filter})")
-                    # Filtriramo naknadno po KO, če je bila podana
-                    if ko_hint:
-                        ko_lower = ko_hint.lower()
-                        filtered_features = [
-                            f for f in features 
-                            if ko_lower in (f.get("properties", {}).get("IME_KO", "") or "").lower()
-                        ]
-                        if filtered_features: 
-                            logger.info(f"Od tega se {len(filtered_features)} ujema s KO '{ko_hint}'.")
-                            return filtered_features
-                        else: 
-                            logger.warning(f"Najdene parcele {parcel_no_clean}, a nobena ne ustreza KO '{ko_hint}'. Vračam vse.")
-                            return features
-                    else: 
-                        return features
-                else: 
-                    logger.debug(f"[GURS] WFS OK, 0 zadetkov (Type={type_name}, Filter={full_cql_filter})")
+                for feature in features:
+                    props = feature.get("properties", {})
+                    eid_parcela = props.get("EID_PARCELA")
                     
-            except httpx.HTTPStatusError as exc: 
-                logger.warning(f"[GURS] WFS HTTPStatusError {exc.response.status_code} (Type={type_name}, Filter={full_cql_filter}): {exc.response.text[:500]}")
-            except Exception as exc: 
-                logger.error(f"[GURS] WFS Splošna napaka (Type={type_name}, Filter={full_cql_filter}): {exc}", exc_info=True)
-            continue
+                    if eid_parcela:
+                        land_use_features = await _fetch_parcel_land_use(eid_parcela, client)
+                        
+                        if land_use_features:
+                            land_use_parts = []
+                            for lu_feat in land_use_features:
+                                lu_props = lu_feat.get("properties", {})
+                                lu_id = lu_props.get("VRSTA_NAMENSKE_RABE_ID")
+                                lu_delez_raw = lu_props.get("DELEZ")
+                                
+                                # === POPRAVEK: Iz "1000%" v "100%" ===
+                                # Vrednost 'DELEZ' je očitno že v procentih (npr. 100.0), ne 0-1 (npr. 1.0)
+                                lu_delez_str = f"{float(lu_delez_raw):.0f}%" if lu_delez_raw is not None else "N/A"
+                                # === KONEC POPRAVKA ===
+
+                                land_use_parts.append(f"ID: {lu_id} ({lu_delez_str})")
+                            
+                            props["namenska_raba_wfs"] = ", ".join(land_use_parts)
+                            logger.debug(f"Namenska raba za {eid_parcela}: {props['namenska_raba_wfs']}")
+                        else:
+                            props["namenska_raba_wfs"] = "Ni podatka (WFS)"
+                    else:
+                        props["namenska_raba_wfs"] = "Manjka EID_PARCELA"
+
+                return features 
+            
+            else: 
+                logger.debug(f"[GURS] WFS OK, 0 zadetkov (Type={type_name}, Filter={full_cql_filter})")
+                
+        except httpx.HTTPStatusError as exc: 
+            logger.warning(f"[GURS] WFS HTTPStatusError {exc.response.status_code} (Type={type_name}, Filter={full_cql_filter}): {exc.response.text[:500]}")
+        except Exception as exc: 
+            logger.error(f"[GURS] WFS Splošna napaka (Type={type_name}, Filter={full_cql_filter}): {exc}", exc_info=True)
 
     logger.warning(f"[GURS] WFS poizvedba ni vrnila rezultatov za filter: {full_cql_filter}")
     return []
-# === KONEC POPRAVLJENE FUNKCIJE ===
 
 def _build_parcel_payload(feature: Dict[str, Any]) -> Dict[str, Any]:
     props = feature.get("properties") or {}; geometry = feature.get("geometry") or {}
-    # Zdaj vemo, da WFS vrača ST_PARCE in IME_KO
-    parcel_no = props.get("ST_PARCE") or "Neznano" 
-    ko_name = props.get("IME_KO") or "Ni podatka"
-    povrsina = props.get("POVRSINA") or props.get("RAC_POVRSINA") or 0
-    namenska_raba = "Ni podatka (iz KN)" # To pride iz GetFeatureInfo klica
+    
+    parcel_no = props.get("ST_PARCELE") or "Neznano"  
+    ko_id = props.get("KO_ID") 
+    
+    # Tukaj nastavimo ime KO, ki bo uporabljeno povsod
+    ko_name = f"KO ID: {ko_id}" if ko_id else "Ni podatka"
+    
+    povrsina = props.get("POVRSINA") or 0
+    namenska_raba = props.get("namenska_raba_wfs") or "Ni podatka (WFS)" 
+    
     center = _geometry_centroid(geometry)
-    cache_key = _parcel_cache_key(parcel_no, ko_name)
-    if not center: logger.warning(f"Ni centra za {parcel_no}, mock."); center = get_mock_coordinates(cache_key) 
-    PARCEL_COORD_CACHE[cache_key] = center
-    return {"stevilka": parcel_no, "katastrska_obcina": ko_name, "povrsina": int(povrsina) if povrsina else 0, "namenska_raba": namenska_raba, "coordinates": center}
+    
+    cache_key = _parcel_cache_key(parcel_no, str(ko_id) if ko_id else "unknown_ko")
+    
+    if not center: 
+        logger.warning(f"Ni centra za {parcel_no}, mock."); 
+        center = get_mock_coordinates(cache_key) 
+    
+    payload = {
+        "stevilka": parcel_no, 
+        "katastrska_obcina": ko_name,
+        "povrsina": int(povrsina) if povrsina else 0, 
+        "namenska_raba": namenska_raba, 
+        "coordinates": center
+    }
+    PARCEL_DATA_CACHE[cache_key] = payload 
+    
+    return payload
+
 
 def _geometry_centroid(geometry: Dict[str, Any]) -> Optional[List[float]]:
     geom_type, coords = geometry.get("type"), geometry.get("coordinates")
@@ -335,21 +478,53 @@ def _flatten_coordinates(data: Any) -> List[List[float]]:
     return points
 
 def _parcel_cache_key(parcel_no: str, ko: Optional[str]) -> str:
-    ko_safe = (ko or "unknown").strip().lower(); parcel_safe = (parcel_no or "unknown").strip(); return f"{parcel_safe}::{ko_safe}"
+    ko_safe = (ko or "unknown").strip().lower(); 
+    parcel_safe = (parcel_no or "unknown").strip(); 
+    return f"{parcel_safe}::{ko_safe}"
 
-async def _resolve_parcel_coordinates(parcel_no: str, ko_hint: Optional[str]) -> List[float]:
-    if not parcel_no: logger.warning("Pridobivam koordinate brez št. parcele."); return get_mock_coordinates(f"unknown-{ko_hint or ''}")
+async def _resolve_parcel_details(parcel_no: str, ko_hint: Optional[str]) -> Optional[Dict[str, Any]]:
+    if not parcel_no: 
+        logger.warning("Pridobivam podrobnosti brez št. parcele."); 
+        return None 
+
     cache_key = _parcel_cache_key(parcel_no, ko_hint)
-    if cache_key in PARCEL_COORD_CACHE: logger.debug(f"Koordinate za '{cache_key}' iz cache."); return PARCEL_COORD_CACHE[cache_key]
-    coords: Optional[List[float]] = None
+    
+    if cache_key in PARCEL_DATA_CACHE: 
+        logger.debug(f"Podatki za '{cache_key}' iz cache."); 
+        return PARCEL_DATA_CACHE[cache_key]
+
+    ko_id_str = str(_extract_ko_id(ko_hint) or ko_hint or "unknown")
+    cache_key_id = _parcel_cache_key(parcel_no, ko_id_str)
+
+    if cache_key_id in PARCEL_DATA_CACHE:
+        logger.debug(f"Podatki za '{cache_key_id}' (z ID) iz cache.");
+        return PARCEL_DATA_CACHE[cache_key_id]
+
+    payload: Optional[Dict[str, Any]] = None
+    
     if ENABLE_REAL_GURS_API:
-        logger.debug(f"Iščem koordinate za '{cache_key}' preko WFS...")
-        features = await _fetch_parcel_features(parcel_no, ko_hint) # Uporabi novo funkcijo
+        logger.debug(f"Iščem podrobnosti za '{cache_key}' preko WFS...")
+        features = await _fetch_parcel_features(parcel_no, ko_hint)
         if features:
-            payload = _build_parcel_payload(features[0]); coords = payload.get("coordinates")
-            if coords: logger.info(f"Koordinate za '{cache_key}' iz WFS.")
-            else: logger.warning(f"WFS vrnil parcelo za '{cache_key}', a centroid ni izračunan.")
-        else: logger.warning(f"WFS ni našel parcele za '{cache_key}'.")
-    if not coords: logger.debug(f"Uporabljam mock koordinate za '{cache_key}'."); coords = get_mock_coordinates(cache_key)
-    PARCEL_COORD_CACHE[cache_key] = coords
-    return coords
+            payload = _build_parcel_payload(features[0]) 
+            if payload:
+                logger.info(f"Podatki za '{cache_key}' iz WFS.")
+            else:
+                logger.warning(f"WFS vrnil parcelo za '{cache_key}', a payload ni bil zgrajen.")
+        else: 
+            logger.warning(f"WFS ni našel parcele za '{cache_key}'.")
+            
+    if not payload: 
+        logger.debug(f"Uporabljam mock payload za '{cache_key}'.")
+        mock_coords = get_mock_coordinates(cache_key)
+        payload = {
+            "stevilka": parcel_no,
+            "katastrska_obcina": ko_hint or "Simulirana KO",
+            "povrsina": 0, 
+            "namenska_raba": "Ni podatka (Mock)",
+            "coordinates": mock_coords
+        }
+        PARCEL_DATA_CACHE[cache_key] = payload
+        PARCEL_DATA_CACHE[cache_key_id] = payload
+
+    return payload
