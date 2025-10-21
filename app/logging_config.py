@@ -12,15 +12,15 @@ from logging.handlers import RotatingFileHandler
 def setup_logging():
     """
     Konfigurira napredno beleženje za aplikacijo.
-
-    Nastavi:
-    - Console handler za stdout (človeku berljiv format)
-    - Rotating file handler za produkcijske loge (JSON format)
-    - Različne nivoje za različne module
     """
-    # Ustvarimo logs direktorij, če ne obstaja
-    logs_dir = Path("logs")
-    logs_dir.mkdir(exist_ok=True)
+    
+    # 1. Absolutna pot do VOLUME-a, kot je definiran v Docker Compose (/app/logs).
+    LOG_ROOT_DIR = "/app/logs"
+    logs_dir = Path(LOG_ROOT_DIR)
+    
+    # Ustvarimo logs direktorij, če ne obstaja (z exist_ok=True, da ne javi napake,
+    # če mapo že ustvari Docker ali je že mapirana.)
+    logs_dir.mkdir(exist_ok=True) 
 
     # Določimo nivo logiranja iz okoljske spremenljivke
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -33,7 +33,7 @@ def setup_logging():
     # Odstranimo obstoječe handlerje (če obstajajo)
     root_logger.handlers.clear()
 
-    # === CONSOLE HANDLER (človeku berljiv format) ===
+    # === CONSOLE HANDLER (človeku berljiv format za stdout) ===
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(numeric_level)
     console_formatter = logging.Formatter(
@@ -44,6 +44,7 @@ def setup_logging():
     root_logger.addHandler(console_handler)
 
     # === FILE HANDLER (JSON format za produkcijo) ===
+    # log_file zdaj ustvari datoteko direktno v /app/logs/app.log (brez podvojene mape 'logs')
     log_file = logs_dir / os.getenv("LOG_FILE", "app.log")
     file_handler = RotatingFileHandler(
         log_file,
@@ -61,7 +62,6 @@ def setup_logging():
     root_logger.addHandler(file_handler)
 
     # === NIVO LOGIRANJA ZA POSAMEZNE MODULE ===
-    # Zmanjšamo "hrup" nekaterih knjižnic
     logging.getLogger("uvicorn").setLevel(logging.WARNING)
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)
