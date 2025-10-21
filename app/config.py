@@ -175,25 +175,25 @@ GURS_WMS_LAYERS = {
         "always_on": True
     },
     "katastr_stevilke": {
-        "name": "NEP_OSNOVNI_PARCELE_CENTROID", # Ime iz kataloga (že pravilno)
-        "title": "Številke parcel (WMS)",
-        "description": "Centroidi parcel s številkami",
+        "name": "SI.GURS.KN:PARCELE", # ✅ POPRAVLJENO: Osnovni sloj za parcele (brez številk)
+        "title": "Parcelne meje",
+        "description": "Meje parcel iz katastra (sloj za številke ni na voljo)",
         "url": GURS_WMS_URL,
         "format": "image/png",
         "transparent": True,
         "category": "overlay",
-        "default_visible": True,  # ✅ POPRAVLJENO: Poskusimo privzeto vklopiti
+        "default_visible": False,  # Izklopljeno, ker je že vključeno v "katastr"
         "always_on": False
     },
     "namenska_raba": {
-        "name": "NEP_OST_NAMENSKE_RABE", # ✅ POPRAVLJENO IME (brez SI.GURS.KN.)
-        "title": "Namenska raba (KN)",
-        "description": "Namenska raba iz katastra nepremičnin (osnovna)",
-        "url": GURS_WMS_URL, # URL je pravilen (KN strežnik)
+        "name": "RPE:RPE_PO", # ✅ POPRAVLJENO: Uporaba RPE strežnika
+        "title": "Namenska raba (RPE)",
+        "description": "Namenska raba prostora iz registra prostorskih enot",
+        "url": GURS_RPE_WMS_URL, # ✅ POPRAVLJENO: Uporaba RPE strežnika
         "format": "image/png",
         "transparent": True,
         "category": "overlay",
-        "default_visible": True, # ✅ POPRAVLJENO: Poskusimo privzeto vklopiti
+        "default_visible": False, # Izklopljeno privzeto, uporabnik vklopi po potrebi
         "opacity": 0.6
     },
     "stavbe": {
