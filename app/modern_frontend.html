@@ -192,8 +192,9 @@
         .results-table tbody td:last-child { max-width: 500px; }
         
         .editable-cell { position: relative; }
-        .editable-text { min-height: 60px; width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 8px; background: var(--input-bg); color: var(--text); font-family: inherit; font-size: 0.9rem; line-height: 1.5; resize: none; overflow: hidden; }
+        .editable-text { min-height: 60px; width: 100%; padding: 0.75rem; border: 1px solid var(--border); border-radius: 8px; background: var(--input-bg); color: var(--text); font-family: inherit; font-size: 0.9rem; line-height: 1.5; resize: none; overflow: hidden; transition: border-color 0.3s ease, box-shadow 0.3s ease; }
         .editable-text:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2); }
+        .editable-text.modified { border: 2px solid #f59e0b; box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2); }
         
         .status-select { padding: 0.4rem 1rem; border-radius: 20px; font-size: 0.85rem; font-weight: 600; text-transform: uppercase; border: 1px solid; background: var(--input-bg); color: var(--text); cursor: pointer; }
         .status-select:focus { outline: none; box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2); }
@@ -262,6 +263,8 @@
         .pdf-page-nav { display: flex; gap: 0.5rem; align-items: center; }
         .pdf-page-info { font-size: 0.9rem; color: var(--text-muted); min-width: 120px; text-align: center; }
         .pdf-viewer-body { flex: 1; overflow: auto; display: flex; justify-content: center; align-items: flex-start; padding: 2rem; background: rgba(15, 23, 42, 0.9); }
+        .pdf-viewer-body.pan-mode { cursor: grab; }
+        .pdf-viewer-body.pan-mode.dragging { cursor: grabbing; }
         .pdf-canvas-container { background: white; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2); max-width: 100%; border-radius: 12px; overflow: hidden; }
         #pdfCanvas { display: block; max-width: 100%; height: auto; }
         .pdf-loading { color: white; font-size: 1.1rem; text-align: center; }
@@ -360,6 +363,7 @@
                 </div>
                 <div class="file-list" id="file-list"></div>
                 <div class="actions-bar">
+                    <button class="btn btn-secondary" id="pdf-preview-btn" onclick="app.openFirstPdfViewer()" disabled style="display: none;">👁️ PDF Predogled</button>
                     <button class="btn btn-primary" id="extract-btn" onclick="app.extractData()" disabled>🚀 Začni Analizo</button>
                 </div>
             </div>
@@ -465,6 +469,7 @@
             <div class="pdf-viewer-header">
                 <div class="pdf-viewer-title" id="pdf-viewer-title">PDF Predogled</div>
                 <div class="pdf-viewer-controls">
+                    <button class="btn btn-secondary btn-small" onclick="app.togglePanMode()" id="pdf-pan-btn" title="Premikanje po dokumentu">✋ Pan</button>
                     <div class="pdf-zoom-controls">
                         <button class="btn btn-secondary btn-small" onclick="app.pdfZoomOut()" id="pdf-zoom-out">−</button>
                         <span class="pdf-zoom-value" id="pdf-zoom-value">100%</span>
@@ -475,6 +480,7 @@
                         <span class="pdf-page-info" id="pdf-page-info">Stran 1 / 1</span>
                         <button class="btn btn-secondary btn-small" onclick="app.pdfNextPage()" id="pdf-next-page">Naslednja →</button>
                     </div>
+                    <button class="btn btn-secondary btn-small" onclick="app.printPdf()" id="pdf-print-btn" title="Natisni dokument">🖨️ Print</button>
                     <button class="btn btn-secondary btn-small" onclick="app.popOutPdfViewer()" id="pdf-popout" disabled>🗖 Odpri v novem oknu</button>
                     <button class="btn btn-primary btn-small" onclick="app.closePdfViewer()">Zapri</button>
                 </div>
@@ -538,6 +544,13 @@
         pdfScrollTimeout: null,
         pdfWidth: 50,
         isResizing: false,
+        panMode: false,
+        isDragging: false,
+        dragStartX: 0,
+        dragStartY: 0,
+        scrollStartX: 0,
+        scrollStartY: 0,
+        originalTextareaValues: new Map(),
 
         // ⭐ DODAJ TO FUNKCIJO TUKAJ ⭐
         openGursMap() {
@@ -628,17 +641,12 @@
             },
 
             handlePdfScroll(event) {
+                // Omogoči normalno scrollanje, ne spreminjaj strani avtomatsko
                 if (!this.pdfDoc || this.pdfLoading) return;
-                event.preventDefault();
-                if (this.pdfScrollTimeout) clearTimeout(this.pdfScrollTimeout);
-                const direction = event.deltaY;
-                this.pdfScrollTimeout = setTimeout(() => {
-                    if (direction > 0 && this.pdfCurrentPage < this.pdfTotalPages) {
-                        this.renderPdfPage(this.pdfCurrentPage + 1);
-                    } else if (direction < 0 && this.pdfCurrentPage > 1) {
-                        this.renderPdfPage(this.pdfCurrentPage - 1);
-                    }
-                }, 150);
+
+                // Dovoli normalno scrollanje v PDF viewer body
+                // Ne preprečuj default scroll vedenje
+                return;
             },
 
             updatePdfButtons() {
@@ -716,7 +724,7 @@
 
             addFiles(newFiles) {
                 const validFiles = newFiles.filter(file => {
-                    const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
+                    const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                                       'application/vnd.ms-excel', 'image/png', 'image/jpeg', 'image/jpg'];
                     const maxSize = 50 * 1024 * 1024;
                     if (!validTypes.includes(file.type)) { this.showToast('error', 'Napaka', `${file.name} ni podprt format`); return false; }
@@ -726,6 +734,7 @@
                 this.files.push(...validFiles);
                 validFiles.forEach(file => { this.filesMeta[file.name] = { name: file.name, pages: '' }; });
                 this.renderFileList();
+                this.updatePdfPreviewButton();
                 if (validFiles.length > 0) {
                     this.showToast('success', 'Datoteke dodane', `Dodanih ${validFiles.length} datotek`);
                     document.getElementById('extract-btn').disabled = false;
@@ -737,8 +746,24 @@
                 delete this.filesMeta[fileName];
                 this.files.splice(index, 1);
                 this.renderFileList();
+                this.updatePdfPreviewButton();
                 this.showToast('info', 'Datoteka odstranjena', fileName);
                 if (this.files.length === 0) document.getElementById('extract-btn').disabled = true;
+            },
+
+            updatePdfPreviewButton() {
+                const pdfPreviewBtn = document.getElementById('pdf-preview-btn');
+                const hasPdf = this.files.some(file => file.type === 'application/pdf');
+
+                if (pdfPreviewBtn) {
+                    if (hasPdf) {
+                        pdfPreviewBtn.style.display = 'inline-block';
+                        pdfPreviewBtn.disabled = false;
+                    } else {
+                        pdfPreviewBtn.style.display = 'none';
+                        pdfPreviewBtn.disabled = true;
+                    }
+                }
             },
 
             updatePages(fileName, pages) { if (this.filesMeta[fileName]) this.filesMeta[fileName].pages = pages; },
@@ -934,6 +959,107 @@
                 }
             },
 
+            togglePanMode() {
+                this.panMode = !this.panMode;
+                const pdfBody = document.getElementById('pdf-viewer-body');
+                const panBtn = document.getElementById('pdf-pan-btn');
+
+                if (this.panMode) {
+                    pdfBody.classList.add('pan-mode');
+                    if (panBtn) panBtn.style.background = 'var(--primary)';
+                    this.initPanListeners();
+                } else {
+                    pdfBody.classList.remove('pan-mode', 'dragging');
+                    if (panBtn) panBtn.style.background = '';
+                    this.removePanListeners();
+                }
+            },
+
+            initPanListeners() {
+                const pdfBody = document.getElementById('pdf-viewer-body');
+                if (!pdfBody) return;
+
+                pdfBody.addEventListener('mousedown', this.handlePanStart.bind(this));
+                pdfBody.addEventListener('mousemove', this.handlePanMove.bind(this));
+                pdfBody.addEventListener('mouseup', this.handlePanEnd.bind(this));
+                pdfBody.addEventListener('mouseleave', this.handlePanEnd.bind(this));
+            },
+
+            removePanListeners() {
+                const pdfBody = document.getElementById('pdf-viewer-body');
+                if (!pdfBody) return;
+
+                pdfBody.removeEventListener('mousedown', this.handlePanStart.bind(this));
+                pdfBody.removeEventListener('mousemove', this.handlePanMove.bind(this));
+                pdfBody.removeEventListener('mouseup', this.handlePanEnd.bind(this));
+                pdfBody.removeEventListener('mouseleave', this.handlePanEnd.bind(this));
+            },
+
+            handlePanStart(e) {
+                if (!this.panMode) return;
+                const pdfBody = document.getElementById('pdf-viewer-body');
+
+                this.isDragging = true;
+                this.dragStartX = e.clientX;
+                this.dragStartY = e.clientY;
+                this.scrollStartX = pdfBody.scrollLeft;
+                this.scrollStartY = pdfBody.scrollTop;
+
+                pdfBody.classList.add('dragging');
+                e.preventDefault();
+            },
+
+            handlePanMove(e) {
+                if (!this.isDragging || !this.panMode) return;
+                const pdfBody = document.getElementById('pdf-viewer-body');
+
+                const dx = e.clientX - this.dragStartX;
+                const dy = e.clientY - this.dragStartY;
+
+                pdfBody.scrollLeft = this.scrollStartX - dx;
+                pdfBody.scrollTop = this.scrollStartY - dy;
+
+                e.preventDefault();
+            },
+
+            handlePanEnd(e) {
+                if (!this.panMode) return;
+                const pdfBody = document.getElementById('pdf-viewer-body');
+
+                this.isDragging = false;
+                pdfBody.classList.remove('dragging');
+            },
+
+            printPdf() {
+                if (!this.currentPdfFile) {
+                    this.showToast('error', 'Ni dokumenta', 'Najprej odprite PDF predogled');
+                    return;
+                }
+
+                const fileUrl = URL.createObjectURL(this.currentPdfFile);
+                const printWindow = window.open(fileUrl, '_blank');
+
+                if (printWindow) {
+                    printWindow.addEventListener('load', () => {
+                        printWindow.print();
+                        setTimeout(() => URL.revokeObjectURL(fileUrl), 1000);
+                    });
+                    this.showToast('success', 'Printanje', 'PDF je pripravljen za tiskanje');
+                } else {
+                    this.showToast('error', 'Napaka', 'Ni mogoče odpreti tiskalnika');
+                    URL.revokeObjectURL(fileUrl);
+                }
+            },
+
+            openFirstPdfViewer() {
+                const firstPdfIndex = this.files.findIndex(file => file.type === 'application/pdf');
+                if (firstPdfIndex !== -1) {
+                    this.openPdfViewer(firstPdfIndex);
+                } else {
+                    this.showToast('info', 'Ni PDF-ja', 'Ni PDF dokumentov za predogled');
+                }
+            },
+
             async extractData() {
                 if (this.files.length === 0) return;
                 this.showProgress('Ekstrahiram podatke', 'Pripravljam dokumente...', 10);
@@ -1044,16 +1170,35 @@
                 container.innerHTML = Object.keys(KEY_DATA_LABELS).map((key, index) => `
                     <div class="key-data-item">
                         <label class="form-label">${KEY_DATA_LABELS[key]}</label>
-                        <textarea class="form-input" id="keydata-textarea-${index}" oninput="app.autoResizeTextarea(this)" onchange="app.keyData['${key}'] = this.value">${this.keyData[key]}</textarea>
+                        <textarea class="form-input editable-text" id="keydata-textarea-${index}" oninput="app.autoResizeTextarea(this)" onchange="app.updateKeyData('${key}', ${index}, this.value)">${this.keyData[key]}</textarea>
                     </div>
                 `).join('');
-                
+
                 setTimeout(() => {
-                    Object.keys(KEY_DATA_LABELS).forEach((_, index) => {
+                    Object.keys(KEY_DATA_LABELS).forEach((key, index) => {
                         const textarea = document.getElementById(`keydata-textarea-${index}`);
-                        if (textarea) this.autoResizeTextarea(textarea);
+                        if (textarea) {
+                            this.autoResizeTextarea(textarea);
+                            // Shrani originalno vrednost
+                            this.originalTextareaValues.set(`keydata-textarea-${index}`, this.keyData[key]);
+                        }
                     });
                 }, 10);
+            },
+
+            updateKeyData(key, index, newValue) {
+                this.keyData[key] = newValue;
+
+                // Dodaj "modified" klas če se je vsebina spremenila
+                const textarea = document.getElementById(`keydata-textarea-${index}`);
+                if (textarea) {
+                    const originalValue = this.originalTextareaValues.get(`keydata-textarea-${index}`) || '';
+                    if (newValue !== originalValue) {
+                        textarea.classList.add('modified');
+                    } else {
+                        textarea.classList.remove('modified');
+                    }
+                }
             },
 
             addEupRabaPair() { this.eupRabaPairs.push({ eup: '', raba: '' }); this.renderEupRabaPairs(); },
@@ -1158,9 +1303,13 @@
                 `}).join('');
                 
                 setTimeout(() => {
-                    this.results.forEach((_, index) => {
+                    this.results.forEach((result, index) => {
                         const textarea = document.getElementById(`textarea-${index}`);
-                        if (textarea) this.autoResizeTextarea(textarea);
+                        if (textarea) {
+                            this.autoResizeTextarea(textarea);
+                            // Shrani originalno vrednost
+                            this.originalTextareaValues.set(`textarea-${index}`, result.explanation);
+                        }
                     });
                 }, 10);
             },
@@ -1191,6 +1340,18 @@
             updateExplanation(index, newExplanation) {
                 this.results[index].explanation = newExplanation;
                 this.markAsChanged();
+
+                // Dodaj "modified" klas če se je vsebina spremenila
+                const textarea = document.getElementById(`textarea-${index}`);
+                if (textarea) {
+                    const originalValue = this.originalTextareaValues.get(`textarea-${index}`) || '';
+                    if (newExplanation !== originalValue) {
+                        textarea.classList.add('modified');
+                    } else {
+                        textarea.classList.remove('modified');
+                    }
+                }
+
                 this.showToast('info', 'Obrazložitev posodobljena', `Zahteva ${this.results[index].id}`);
             },
 
