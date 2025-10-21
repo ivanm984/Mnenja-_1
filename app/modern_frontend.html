@@ -560,7 +560,7 @@
         expandedRows: new Set(),
         hasUnsavedChanges: false,
         saveTimeout: null,
-    
+
         // PDF Viewer state
         pdfDoc: null,
         pdfCurrentPage: 1,
@@ -580,6 +580,10 @@
         scrollStartX: 0,
         scrollStartY: 0,
         originalTextareaValues: new Map(),
+
+        // Progress tracking state
+        progressInterval: null,
+        currentProgress: null,
 
         // ⭐ DODAJ TO FUNKCIJO TUKAJ ⭐
         openGursMap() {
@@ -1139,22 +1143,32 @@
 
             async extractData() {
                 if (this.files.length === 0) return;
-                this.showProgress('Ekstrahiram podatke', 'Pripravljam dokumente...', 10);
+
                 document.getElementById('extract-btn').disabled = true;
+                this.showLoading('Inicializacija ekstrakcije...');
 
                 try {
                     const formData = new FormData();
                     this.files.forEach(file => formData.append('pdf_files', file));
                     formData.append('municipality_slug', 'litija');
                     formData.append('files_meta_json', JSON.stringify(Object.values(this.filesMeta)));
-                    this.updateProgress('Ekstrahiram podatke', 'Pošiljam dokumente na strežnik...', 35);
-                    const response = await fetch('/extract-data', { method: 'POST', body: formData });
-                    this.updateProgress('Ekstrahiram podatke', 'Analiziram vsebino...', 65);
-                    if (!response.ok) throw new Error('API napaka');
-                    const data = await response.json();
-                    this.updateProgress('Ekstrahiram podatke', 'Pripravljam rezultate...', 85);
 
+                    // Start progress polling before sending request
+                    const tempSessionId = Date.now().toString();
+
+                    const response = await fetch('/extract-data', { method: 'POST', body: formData });
+                    if (!response.ok) throw new Error('API napaka');
+
+                    const data = await response.json();
                     this.sessionId = data.session_id;
+
+                    // Start progress polling with actual session ID
+                    this.startProgressPolling(this.sessionId);
+                    this.hideLoading();
+
+                    // Wait a bit for progress to show
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
                     this.eupRabaPairs = (data.eup || []).map((eup, i) => ({ eup, raba: (data.namenska_raba || [])[i] || '' }));
                     if (this.eupRabaPairs.length === 0) this.eupRabaPairs = [{ eup: '', raba: '' }];
 
@@ -1165,16 +1179,14 @@
 
                     this.renderEupRabaPairs();
                     this.renderKeyData();
-                    this.updateProgress('Ekstrahiram podatke', 'Dokončano!', 100);
-                    setTimeout(() => {
-                        this.hideProgress();
-                        this.showToast('success', 'Podatki ekstrahirani', 'AI je uspešno ekstrahiral ključne podatke');
-                    }, 500);
+
+                    this.showToast('success', 'Podatki ekstrahirani', 'AI je uspešno ekstrahiral ključne podatke');
                     this.updateStepAccess();
                     this.nextStep();
                     document.getElementById('extract-btn').disabled = false;
                 } catch (error) {
-                    this.hideProgress();
+                    this.hideLoading();
+                    this.stopProgressPolling();
                     this.showToast('error', 'Napaka', error.message);
                     if (this.files.length > 0) {
                         document.getElementById('extract-btn').disabled = false;
@@ -1286,11 +1298,13 @@
                     this.showToast('error', 'Manjkajoči podatki', 'Prosimo izpolnite EUP in Namensko rabo');
                     return;
                 }
-                
-                this.showLoading('Analiziram skladnost z AI...');
+
                 this.currentStep = 3;
                 this.updateUI();
-                
+
+                // Start progress polling
+                this.startProgressPolling(this.sessionId);
+
                 try {
                     const payload = {
                         session_id: this.sessionId,
@@ -1300,21 +1314,21 @@
                         selected_ids: [],
                         existing_results_map: {}
                     };
-                    
+
                     const response = await fetch('/analyze-report', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
                     });
-                    
+
                     if (!response.ok) throw new Error('Napaka pri analizi');
                     const data = await response.json();
-                    
+
                     const resultsMap = data.results_map || {};
                     this.results = (data.zahteve || []).map(req => {
                         const result = resultsMap[req.id] || {};
                         const skladnost = (result.skladnost || '').toLowerCase();
-                        
+
                         return {
                             id: req.id,
                             requirement: req.naslov || 'Neznana zahteva',
@@ -1325,9 +1339,9 @@
                             skladnost: result.skladnost || 'Neskladno'
                         };
                     });
-                    
+
                     this.renderResults();
-                    this.hideLoading();
+                    this.stopProgressPolling();
                     this.updateStepAccess();
                     
                     const compliantCount = this.results.filter(r => r.compliant).length;
@@ -1337,6 +1351,7 @@
                         `${compliantCount} skladnih, ${nonCompliantCount} neskladnih, ${notRelevantCount} ni relevantno`);
                     this.nextStep();
                 } catch (error) {
+                    this.stopProgressPolling();
                     this.hideLoading();
                     this.showToast('error', 'Napaka pri analizi', error.message);
                     this.currentStep = 2;
@@ -1836,6 +1851,70 @@
                 const modal = document.getElementById('popup-blocked-modal');
                 if (modal) {
                     modal.remove();
+                }
+            },
+
+            // Progress tracking methods
+            startProgressPolling(sessionId) {
+                this.stopProgressPolling(); // Stop any existing polling
+                this.showProgressBar();
+
+                this.progressInterval = setInterval(async () => {
+                    try {
+                        const response = await fetch(`/progress/${sessionId}`);
+                        if (!response.ok) return;
+
+                        const progressData = await response.json();
+                        this.currentProgress = progressData;
+                        this.updateProgressBar(progressData);
+
+                        // Stop polling when completed
+                        if (progressData.completed) {
+                            this.stopProgressPolling();
+                        }
+                    } catch (error) {
+                        console.error('Progress polling error:', error);
+                    }
+                }, 800); // Poll every 800ms
+            },
+
+            stopProgressPolling() {
+                if (this.progressInterval) {
+                    clearInterval(this.progressInterval);
+                    this.progressInterval = null;
+                }
+
+                // Hide progress bar after a short delay
+                setTimeout(() => {
+                    this.hideProgressBar();
+                }, 1000);
+            },
+
+            updateProgressBar(progressData) {
+                const { step, total_steps, message, percentage } = progressData;
+
+                const titleEl = document.querySelector('.progress-bar-title');
+                const messageEl = document.querySelector('.progress-bar-message');
+                const fillEl = document.querySelector('.progress-bar-fill');
+                const percentageEl = document.querySelector('.progress-bar-percentage');
+
+                if (titleEl) titleEl.textContent = `Korak ${step}/${total_steps}`;
+                if (messageEl) messageEl.textContent = message || 'Procesiranje...';
+                if (fillEl) fillEl.style.width = `${percentage || 0}%`;
+                if (percentageEl) percentageEl.textContent = `${percentage || 0}%`;
+            },
+
+            showProgressBar() {
+                const progressBar = document.querySelector('.progress-bar-container');
+                if (progressBar) {
+                    progressBar.classList.add('active');
+                }
+            },
+
+            hideProgressBar() {
+                const progressBar = document.querySelector('.progress-bar-container');
+                if (progressBar) {
+                    progressBar.classList.remove('active');
                 }
             },
 

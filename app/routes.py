@@ -91,6 +91,22 @@ async def frontend() -> str:
 async def health() -> Dict[str, str]:
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
 
+@router.get("/progress/{session_id}")
+async def get_progress(session_id: str):
+    """
+    Vrne trenutni progress za dano sejo.
+
+    Args:
+        session_id: ID seje
+
+    Returns:
+        Dict s progress podatki ali None če ne obstaja
+    """
+    progress = await cache_manager.retrieve_session_data(f"progress:{session_id}")
+    if not progress:
+        return {"step": 0, "total_steps": 4, "message": "Inicializacija...", "percentage": 0}
+    return progress
+
 @router.post("/save-session")
 async def save_session(payload: SaveSessionPayload):
     session_id, data = payload.session_id.strip(), payload.data
@@ -166,21 +182,49 @@ async def extract_data(
     session_id = str(start_time)
     logger.info(f"[{session_id}] Začetek /extract-data z {len(pdf_files)} datotekami")
 
+    # Shrani progress v cache za frontend polling
+    await cache_manager.store_session_data(f"progress:{session_id}", {
+        "step": 1,
+        "total_steps": 4,
+        "message": "Procesiranje PDF datotek...",
+        "percentage": 0
+    })
+
     # Parsiranje metapodatkov
     page_overrides = _parse_files_metadata(files_meta_json)
 
-    # Obdelava PDF datotek
+    # Obdelva PDF datotek
+    await cache_manager.store_session_data(f"progress:{session_id}", {
+        "step": 1,
+        "total_steps": 4,
+        "message": f"Ekstrakcija besedila iz {len(pdf_files)} PDF dokumentov...",
+        "percentage": 10
+    })
+
     project_text, all_images, files_manifest = await PDFService.process_pdf_files(
         pdf_files, page_overrides, session_id
     )
 
     # Shranjevanje slik
+    await cache_manager.store_session_data(f"progress:{session_id}", {
+        "step": 2,
+        "total_steps": 4,
+        "message": "Analiza slik in priprava podatkov...",
+        "percentage": 25
+    })
     image_paths = await save_images_for_session(session_id, all_images)
 
     # Pridobitev profila občine
     profile = get_municipality_profile(municipality_slug)
 
     logger.info(f"[{session_id}] Začenjam vzporedne AI klice za občino {profile.slug}")
+    await cache_manager.store_session_data(f"progress:{session_id}", {
+        "step": 3,
+        "total_steps": 4,
+        "message": "AI analiza dokumentacije (EUP, namenska raba, metapodatki)...",
+        "percentage": 40
+    })
+
     gemini_start_time = time.perf_counter()
 
     # Vzporedni AI klici
@@ -192,6 +236,13 @@ async def extract_data(
 
     gemini_duration = time.perf_counter() - gemini_start_time
     logger.info(f"[{session_id}] AI klici končani v {gemini_duration:.2f}s")
+
+    await cache_manager.store_session_data(f"progress:{session_id}", {
+        "step": 4,
+        "total_steps": 4,
+        "message": "Shranjevanje rezultatov...",
+        "percentage": 85
+    })
 
     # Združitev metapodatkov
     merged_metadata = {**profile.default_metadata, **metadata}
@@ -224,6 +275,14 @@ async def extract_data(
         **key_data,
     }
 
+    await cache_manager.store_session_data(f"progress:{session_id}", {
+        "step": 4,
+        "total_steps": 4,
+        "message": "Končano!",
+        "percentage": 100,
+        "completed": True
+    })
+
     total_duration = time.perf_counter() - start_time
     logger.info(f"[{session_id}] Proces končan v {total_duration:.2f}s")
     return response_data
@@ -251,7 +310,15 @@ async def analyze_report(
     start_time = time.perf_counter()
     session_id = payload.session_id
     logger.info(f"[{session_id}] Začetek /analyze-report")
-    
+
+    # Initialize progress
+    await cache_manager.store_session_data(f"progress:{session_id}", {
+        "step": 1,
+        "total_steps": 5,
+        "message": "Inicializacija analize skladnosti...",
+        "percentage": 0
+    })
+
     data = await cache_manager.retrieve_session_data(session_id)
     if not data:
         raise HTTPException(status_code=404, detail="Seja je potekla ali ne obstaja.")
@@ -266,6 +333,13 @@ async def analyze_report(
     if not final_raba_list_cleaned:
         raise HTTPException(status_code=400, detail="Namenska raba manjka.")
 
+    await cache_manager.store_session_data(f"progress:{session_id}", {
+        "step": 2,
+        "total_steps": 5,
+        "message": "Generiranje zahtev skladnosti iz prostorskih aktov...",
+        "percentage": 15
+    })
+
     municipality_profile = get_municipality_profile(data.get("municipality_slug"))
     zahteve = build_requirements_from_db(
         final_eup_list_cleaned,
@@ -277,6 +351,13 @@ async def analyze_report(
 
     if not zahteve_za_analizo:
         raise HTTPException(status_code=400, detail="Ni izbranih zahtev za analizo.")
+
+    await cache_manager.store_session_data(f"progress:{session_id}", {
+        "step": 3,
+        "total_steps": 5,
+        "message": f"Pripravljam AI analizo za {len(zahteve_za_analizo)} zahtev...",
+        "percentage": 30
+    })
 
     final_key_data = payload.key_data.dict()
 
@@ -317,10 +398,24 @@ async def analyze_report(
         tasks.append(task)
     
     logger.info(f"[{session_id}] Začenjam {len(tasks)} vzporednih AI klicev")
+    await cache_manager.store_session_data(f"progress:{session_id}", {
+        "step": 4,
+        "total_steps": 5,
+        "message": f"AI analiza poteka - to lahko traja 2-3 minute ({len(zahteve_za_analizo)} zahtev)...",
+        "percentage": 40
+    })
+
     gemini_start_time = time.perf_counter()
     ai_responses = await asyncio.gather(*tasks, return_exceptions=True)
     gemini_duration = time.perf_counter() - gemini_start_time
     logger.info(f"[{session_id}] AI analiza končana v {gemini_duration:.2f}s")
+
+    await cache_manager.store_session_data(f"progress:{session_id}", {
+        "step": 5,
+        "total_steps": 5,
+        "message": "Procesiranje rezultatov...",
+        "percentage": 90
+    })
 
     combined_results_map = {**payload.existing_results_map}
     for response_obj, chunk in zip(ai_responses, zahteve_chunks):
@@ -350,6 +445,14 @@ async def analyze_report(
         "municipality_name": municipality_profile.name,
     }
     await cache_manager.store_session_data(f"report:{session_id}", final_report_data)
+
+    await cache_manager.store_session_data(f"progress:{session_id}", {
+        "step": 5,
+        "total_steps": 5,
+        "message": "Analiza končana!",
+        "percentage": 100,
+        "completed": True
+    })
 
     total_duration = time.perf_counter() - start_time
     logger.info(f"[{session_id}] Proces končan v {total_duration:.2f}s")
