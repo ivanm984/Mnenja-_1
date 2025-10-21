@@ -6,11 +6,13 @@ services:
     container_name: compliance-api
     ports:
       - "${API_PORT:-8000}:8000"
-    env_file:
-      - .env
     environment:
-      - REDIS_URL=redis://:${REDIS_PASSWORD:-}@redis:6379/0
-      - DATABASE_URL=${DATABASE_URL:-sqlite:///./local_sessions.db}
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=sqlite:///./local_sessions.db
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - API_KEYS=${API_KEYS:-demo_key_123}
+      - DEBUG=${DEBUG:-true}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8000}
     volumes:
       - ./data:/app/data
       - ./reports:/app/reports
