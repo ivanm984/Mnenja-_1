@@ -10,15 +10,196 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from docx import Document
 from docx.enum.section import WD_ORIENT
-from docx.shared import Inches, RGBColor
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Inches, Pt, RGBColor
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment
 from openpyxl.worksheet.worksheet import Worksheet
+
+
+def _add_priloga_10a_form(
+    doc: Document,
+    zahteve: List[Dict[str, Any]],
+    results_map: Dict[str, Dict[str, Any]],
+    metadata: Dict[str, str],
+) -> None:
+    """
+    Doda obrazec Priloga 10A na začetek Word dokumenta.
+
+    Args:
+        doc: Word dokument
+        zahteve: Seznam zahtev
+        results_map: Slovar z rezultati
+        metadata: Metapodatki projekta
+    """
+    # Naslov obrazca
+    heading = doc.add_heading("PRILOGA 10A", level=1)
+    heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+    subheading = doc.add_paragraph("MNENJE PRISTOJNEGA MNENJEDAJALCA")
+    subheading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    subheading.runs[0].bold = True
+    subheading.runs[0].font.size = Pt(12)
+
+    doc.add_paragraph()  # Prazen odstavek
+
+    # Določi skladnost
+    neskladja = [
+        z for z in zahteve
+        if results_map.get(z.get("id"), {}).get("skladnost") == "Neskladno"
+    ]
+    je_skladna = len(neskladja) == 0
+
+    # SEKCIJA 1: OSNOVNI PODATKI O MNENJU
+    table1 = doc.add_table(rows=8, cols=2)
+    table1.style = "Table Grid"
+
+    rows = table1.rows
+    rows[0].cells[0].text = "Naziv mnenja:"
+    rows[0].cells[1].text = f"Mnenje o skladnosti – {metadata.get('ime_projekta', 'Ni podatka')}"
+
+    rows[1].cells[0].text = "Navedba mnenjedajalca:"
+    rows[1].cells[1].text = metadata.get("mnenjedajalec", "OBČINA LITIJA")
+
+    rows[2].cells[0].text = "Naslov:"
+    rows[2].cells[1].text = metadata.get("mnenjedajalec_naslov", "Ni podatka")
+
+    rows[3].cells[0].text = "Št. mnenja:"
+    stevilka_zadeve = metadata.get("stevilka_zadeve", "").strip()
+    rows[3].cells[1].text = stevilka_zadeve if stevilka_zadeve else metadata.get("stevilka_porocila", "Ni podatka")
+
+    rows[4].cells[0].text = "Datum:"
+    rows[4].cells[1].text = datetime.now().strftime("%d.%m.%Y")
+
+    rows[5].cells[0].text = "Predpis oz. podlaga za mnenje:"
+    rows[5].cells[1].text = metadata.get("predpisi", "Ni podatka")
+
+    rows[6].cells[0].text = "Postopek vodil:"
+    rows[6].cells[1].text = metadata.get("postopek_vodil", "Ni podatka")
+
+    rows[7].cells[0].text = "Odgovorna oseba mnenjedajalca:"
+    rows[7].cells[1].text = metadata.get("odgovorna_oseba", "Ni podatka")
+
+    # Nastavi širino stolpcev
+    for row in rows:
+        row.cells[0].width = Inches(2.5)
+        row.cells[1].width = Inches(5)
+        # Bold za leve celice
+        row.cells[0].paragraphs[0].runs[0].bold = True
+
+    doc.add_paragraph()
+
+    # SEKCIJA 2: INVESTITOR
+    doc.add_paragraph("INVESTITOR:").runs[0].bold = True
+    table2 = doc.add_table(rows=2, cols=2)
+    table2.style = "Table Grid"
+
+    table2.rows[0].cells[0].text = "Ime in priimek ali naziv družbe:"
+    table2.rows[0].cells[1].text = metadata.get("investitor", "Ni podatka")
+    table2.rows[1].cells[0].text = "Naslov ali poslovni naslov družbe:"
+    table2.rows[1].cells[1].text = metadata.get("investitor_naslov", "Ni podatka")
+
+    for row in table2.rows:
+        row.cells[0].width = Inches(2.5)
+        row.cells[1].width = Inches(5)
+        row.cells[0].paragraphs[0].runs[0].bold = True
+
+    doc.add_paragraph()
+
+    # SEKCIJA 3: PROJEKT
+    doc.add_paragraph("PROJEKT:").runs[0].bold = True
+    table3 = doc.add_table(rows=5, cols=2)
+    table3.style = "Table Grid"
+
+    table3.rows[0].cells[0].text = "Naziv gradnje:"
+    table3.rows[0].cells[1].text = metadata.get("ime_projekta", "Ni podatka")
+
+    table3.rows[1].cells[0].text = "Kratek opis gradnje:"
+    table3.rows[1].cells[1].text = metadata.get("kratek_opis", "Ni podatka")
+
+    table3.rows[2].cells[0].text = "Številka projekta:"
+    table3.rows[2].cells[1].text = metadata.get("stevilka_projekta", "Ni podatka")
+
+    table3.rows[3].cells[0].text = "Datum izdelave:"
+    table3.rows[3].cells[1].text = metadata.get("datum_projekta", "Ni podatka")
+
+    table3.rows[4].cells[0].text = "Projektant (naziv družbe):"
+    table3.rows[4].cells[1].text = metadata.get("projektant", "Ni podatka")
+
+    for row in table3.rows:
+        row.cells[0].width = Inches(2.5)
+        row.cells[1].width = Inches(5)
+        row.cells[0].paragraphs[0].runs[0].bold = True
+
+    doc.add_paragraph()
+
+    # SEKCIJA 4: SKLADNOST
+    doc.add_paragraph("SKLADNOST:").runs[0].bold = True
+    p_skladnost = doc.add_paragraph()
+    if je_skladna:
+        p_skladnost.add_run("☒ JE SKLADNA    ☐ NI SKLADNA").bold = True
+    else:
+        p_skladnost.add_run("☐ JE SKLADNA    ☒ NI SKLADNA").bold = True
+
+    doc.add_paragraph()
+
+    # SEKCIJA 5: OBRAZLOŽITEV
+    doc.add_paragraph("OBRAZLOŽITEV MNENJA:").runs[0].bold = True
+
+    # Statistika
+    total = len(zahteve)
+    compliant_count = sum(
+        1 for z in zahteve
+        if results_map.get(z.get("id"), {}).get("skladnost") == "Skladno"
+    )
+    non_compliant_count = len(neskladja)
+    not_relevant_count = total - compliant_count - non_compliant_count
+
+    stats = doc.add_paragraph()
+    stats.add_run(f"Analiziranih pogojev: {total}\n")
+    stats.add_run(f"Skladnih pogojev: {compliant_count}\n")
+    stats.add_run(f"Neskladnih pogojev: {non_compliant_count}\n")
+    stats.add_run(f"Ni relevantno: {not_relevant_count}\n")
+
+    if neskladja:
+        doc.add_paragraph("Neskladni členi:").runs[0].bold = True
+        for z in neskladja:
+            clen = z.get("clen", "")
+            naslov = z.get("naslov", "")
+            label = f"{clen} - {naslov}" if (clen and naslov) else (naslov or clen or "Neznano")
+            doc.add_paragraph(f"• {label}", style="List Bullet")
+
+    doc.add_paragraph()
+
+    # ZAKLJUČEK
+    doc.add_paragraph("ZAKLJUČEK:").runs[0].bold = True
+    zakljucek = doc.add_paragraph()
+    if je_skladna:
+        zakljucek.add_run(
+            f"Gradnja po projektu '{metadata.get('ime_projekta', 'Ni podatka')}' "
+            f"JE SKLADNA s prostorskim aktom."
+        ).bold = True
+    else:
+        zakljucek.add_run(
+            f"Gradnja po projektu '{metadata.get('ime_projekta', 'Ni podatka')}' "
+            f"NI SKLADNA s prostorskim aktom zaradi zgoraj navedenih neskladij."
+        ).bold = True
+
+    doc.add_paragraph()
+
+    # Podpis
+    p_podpis = doc.add_paragraph()
+    p_podpis.add_run("\nDatum: ________________")
+    p_podpis.add_run("\n\nŽig in podpis: ________________")
+
+    # Nova stran za podrobno poročilo
+    doc.add_page_break()
 
 
 def generate_word_report(
@@ -29,7 +210,7 @@ def generate_word_report(
     report_format: str = "full",
 ) -> str:
     """
-    Generira Word poročilo skladnosti.
+    Generira Word poročilo skladnosti z obrazcem Priloga 10A.
 
     Args:
         zahteve: Seznam zahtev za preverjanje
@@ -42,6 +223,11 @@ def generate_word_report(
         Pot do generirane datoteke
     """
     doc = Document()
+
+    # PRVA STRAN: Obrazec Priloga 10A v pokončni orientaciji
+    _add_priloga_10a_form(doc, zahteve, results_map, metadata)
+
+    # PODROBNO POROČILO: Ležeča orientacija za tabele
     section = doc.sections[0]
     section.orientation = WD_ORIENT.LANDSCAPE
     new_width, new_height = section.page_height, section.page_width
@@ -70,34 +256,9 @@ def generate_word_report(
         for zahteva in zahteve
         if results_map.get(zahteva["id"], {}).get("skladnost") == "Neskladno"
     ]
-    sklepni_status = "NESKLADNA" if neskladja else "SKLADNA"
 
-    doc.add_heading("Sklepna ugotovitev", level=2)
-    p = doc.add_paragraph()
-    p.add_run("Gradnja po projektu '")
-    p.add_run(metadata.get("ime_projekta", "Ni podatka")).italic = True
-    p.add_run(
-        f"', s številko projekta '{metadata.get('stevilka_projekta', 'Ni podatka')}', "
-        f"datumom '{metadata.get('datum_projekta', 'Ni podatka')}' in projektantom "
-        f"'{metadata.get('projektant', 'Ni podatka')}', je glede na predloženo dokumentacijo ocenjena kot "
-    )
-    p.add_run(f"{sklepni_status}").bold = True
-    p.add_run(" s prostorskim aktom.")
-
-    # Dodaj številko zadeve če obstaja
-    stevilka_zadeve = metadata.get("stevilka_zadeve", "").strip()
-    if stevilka_zadeve:
-        p = doc.add_paragraph()
-        p.add_run("Številka zadeve: ").bold = True
-        p.add_run(stevilka_zadeve)
-
-    if neskladja:
-        p = doc.add_paragraph("Ugotovljena so bila neskladja v naslednjih točkah oziroma členih:")
-        for tocka in neskladja:
-            bullet = doc.add_paragraph(tocka, style="List Bullet")
-            for run in bullet.runs:
-                run.font.color.rgb = noncompliant_color
-    doc.add_paragraph()
+    # Naslov podrobnega poročila
+    doc.add_heading("Podrobna analiza skladnosti po zahtevah", level=1)
 
     kategorije = {}
     for zahteva in zahteve:
