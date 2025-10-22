@@ -13,6 +13,10 @@
             --bg: #0f172a;
             --bg-card: #1e293b;
             --bg-glass: rgba(30, 41, 59, 0.8);
+            --bg-control: rgba(15, 23, 42, 0.95);
+            --bg-input: rgba(15, 23, 42, 0.8);
+            --bg-chip: rgba(15, 23, 42, 0.7);
+            --bg-item: rgba(15, 23, 42, 0.6);
             --border: rgba(148, 163, 184, 0.2);
             --text: #e2e8f0;
             --text-muted: #94a3b8;
@@ -21,6 +25,19 @@
             --primary-dark: #4f46e5;
             --success: #10b981;
             --danger: #ef4444;
+        }
+
+        body.light-mode {
+            --bg: #f8fafc;
+            --bg-card: #ffffff;
+            --bg-glass: rgba(255, 255, 255, 0.8);
+            --bg-control: rgba(255, 255, 255, 0.95);
+            --bg-input: rgba(255, 255, 255, 0.9);
+            --bg-chip: rgba(241, 245, 249, 0.95);
+            --bg-item: rgba(248, 250, 252, 0.9);
+            --border: rgba(148, 163, 184, 0.3);
+            --text: #1e293b;
+            --text-muted: #64748b;
         }
 
         * {
@@ -81,7 +98,7 @@
         }
 
         .search-input {
-            background: rgba(15, 23, 42, 0.8);
+            background: var(--bg-input);
             border: 1px solid var(--border);
             border-radius: 12px;
             padding: 0.75rem 1rem 0.75rem 2.5rem;
@@ -171,7 +188,7 @@
         }
 
         .control-btn {
-            background: rgba(15, 23, 42, 0.95);
+            background: var(--bg-control);
             backdrop-filter: blur(10px);
             border: 1px solid var(--border);
             border-radius: 12px;
@@ -195,7 +212,7 @@
             top: 2rem;
             right: 2rem;
             z-index: 1000;
-            background: rgba(15, 23, 42, 0.95);
+            background: var(--bg-control);
             backdrop-filter: blur(10px);
             border: 1px solid var(--border);
             border-radius: 12px;
@@ -272,7 +289,7 @@
             gap: 0.75rem;
             padding: 0.5rem 0.75rem;
             border-radius: 10px;
-            background: rgba(15, 23, 42, 0.7);
+            background: var(--bg-chip);
             border: 1px solid var(--border);
             cursor: pointer;
             transition: background 0.2s, border-color 0.2s;
@@ -339,7 +356,7 @@
         }
 
         .parcel-item {
-            background: rgba(15, 23, 42, 0.6);
+            background: var(--bg-item);
             border: 1px solid var(--border);
             border-radius: 12px;
             padding: 1rem;
@@ -500,6 +517,16 @@
         </div>
     </div>
 
+    <script>
+        // Detektiraj temo iz localStorage in jo apliciraj
+        (function() {
+            const savedTheme = localStorage.getItem('theme') || 'dark';
+            if (savedTheme === 'light') {
+                document.body.classList.add('light-mode');
+            }
+            console.log('[GURS Map] Tema aplicirana:', savedTheme);
+        })();
+    </script>
     <script src="/static/js/gurs_map.js"></script>
 </body>
 </html>
