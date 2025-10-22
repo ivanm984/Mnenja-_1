@@ -42,6 +42,7 @@ temp_storage/
 reports/
 *.docx
 *.xlsx
+!Priloga10A.xlsx
 
 # Logs
 logs/
