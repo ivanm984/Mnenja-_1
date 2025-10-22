@@ -416,9 +416,13 @@
                 <div class="actions-bar">
                     <div class="pdf-dropdown" id="pdf-dropdown" style="display: none;">
                         <button class="btn btn-secondary pdf-dropdown-btn" id="pdf-preview-btn" onclick="app.togglePdfDropdown()">
-                            👁️ PDF Predogled <span id="pdf-dropdown-arrow">▼</span>
+                            <span id="pdf-dropdown-arrow">▼</span>
                         </button>
                         <div class="pdf-dropdown-content" id="pdf-dropdown-content"></div>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; margin-left: auto;">
+                        <button class="btn btn-secondary" id="save-session-btn" onclick="app.saveSession()" title="Shrani sejo (Ctrl+S)">💾 Shrani sejo</button>
+                        <button class="btn btn-secondary" id="load-session-btn" onclick="app.loadSession()" title="Naloži sejo (Ctrl+O)">📂 Naloži sejo</button>
                     </div>
                     <button class="btn btn-primary" id="extract-btn" onclick="app.extractData()" disabled>🚀 Začni Analizo</button>
                 </div>
@@ -686,6 +690,49 @@
                 }
 
                 this.initPdfResize();
+                this.initKeyboardShortcuts();
+            },
+
+            initKeyboardShortcuts() {
+                document.addEventListener('keydown', (e) => {
+                    // Ctrl+S - Save session
+                    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                        e.preventDefault();
+                        this.saveSession();
+                    }
+
+                    // Ctrl+O - Load session
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
+                        e.preventDefault();
+                        this.loadSession();
+                    }
+
+                    // Ctrl+Shift+C - Clear session
+                    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'C') {
+                        e.preventDefault();
+                        if (confirm('Ali ste prepričani, da želite izbrisati shranjeno sejo?')) {
+                            this.clearLocalSession();
+                        }
+                    }
+
+                    // Escape - Close PDF viewer if open
+                    if (e.key === 'Escape') {
+                        if (this.pdfDoc) {
+                            this.closePdfViewer();
+                        }
+                    }
+
+                    // Arrow keys for PDF navigation
+                    if (this.pdfDoc && !this.pdfLoading) {
+                        if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                            e.preventDefault();
+                            this.pdfPrevPage();
+                        } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                            e.preventDefault();
+                            this.pdfNextPage();
+                        }
+                    }
+                });
             },
 
             getPdfPopoutButton() {
@@ -736,12 +783,29 @@
             },
 
             handlePdfScroll(event) {
-                // Omogoči normalno scrollanje, ne spreminjaj strani avtomatsko
-                if (!this.pdfDoc || this.pdfLoading) return;
+                if (!this.pdfDoc || this.pdfLoading || this.pdfTotalPages <= 1) return;
 
-                // Dovoli normalno scrollanje v PDF viewer body
-                // Ne preprečuj default scroll vedenje
-                return;
+                // Clear existing timeout
+                if (this.pdfScrollTimeout) {
+                    clearTimeout(this.pdfScrollTimeout);
+                }
+
+                // Debounce scroll events
+                this.pdfScrollTimeout = setTimeout(() => {
+                    if (event.deltaY > 0) {
+                        // Scroll down - next page
+                        if (this.pdfCurrentPage < this.pdfTotalPages) {
+                            this.renderPdfPage(this.pdfCurrentPage + 1);
+                        }
+                    } else if (event.deltaY < 0) {
+                        // Scroll up - previous page
+                        if (this.pdfCurrentPage > 1) {
+                            this.renderPdfPage(this.pdfCurrentPage - 1);
+                        }
+                    }
+                }, 150); // 150ms debounce
+
+                event.preventDefault();
             },
 
             updatePdfButtons() {
@@ -848,11 +912,27 @@
 
             updatePdfPreviewButton() {
                 const pdfDropdown = document.getElementById('pdf-dropdown');
+                const pdfPreviewBtn = document.getElementById('pdf-preview-btn');
+                const pdfDropdownArrow = document.getElementById('pdf-dropdown-arrow');
                 const pdfFiles = this.files.filter(file => file.type === 'application/pdf');
 
                 if (pdfDropdown) {
                     if (pdfFiles.length > 0) {
                         pdfDropdown.style.display = 'inline-block';
+
+                        // Update button text based on number of PDFs
+                        if (pdfFiles.length === 1) {
+                            if (pdfPreviewBtn) {
+                                pdfPreviewBtn.innerHTML = '👁️ Predogled';
+                                pdfPreviewBtn.title = 'Odpri PDF predogled';
+                            }
+                        } else {
+                            if (pdfPreviewBtn && pdfDropdownArrow) {
+                                pdfPreviewBtn.innerHTML = `👁️ Predogled (${pdfFiles.length}) <span id="pdf-dropdown-arrow">▼</span>`;
+                                pdfPreviewBtn.title = 'Izberi PDF za predogled';
+                            }
+                        }
+
                         this.renderPdfDropdown();
                     } else {
                         pdfDropdown.style.display = 'none';
@@ -861,6 +941,17 @@
             },
 
             togglePdfDropdown() {
+                const pdfFiles = this.files
+                    .map((file, index) => ({ file, index }))
+                    .filter(item => item.file.type === 'application/pdf');
+
+                // If only one PDF, open it directly
+                if (pdfFiles.length === 1) {
+                    this.openPdfViewer(pdfFiles[0].index);
+                    return;
+                }
+
+                // If multiple PDFs, show dropdown
                 const dropdown = document.getElementById('pdf-dropdown');
                 const isOpen = dropdown.classList.contains('open');
 
@@ -2259,6 +2350,113 @@
                 document.getElementById('toast-message').textContent = message;
                 setTimeout(() => toast.classList.add('show'), 100);
                 setTimeout(() => toast.classList.remove('show'), 4000);
+            },
+
+            // Local Session Management
+            async saveSession() {
+                try {
+                    // Convert files to base64 for storage
+                    const filesData = await Promise.all(this.files.map(async (file) => {
+                        const arrayBuffer = await file.arrayBuffer();
+                        const bytes = new Uint8Array(arrayBuffer);
+                        let binary = '';
+                        for (let i = 0; i < bytes.byteLength; i++) {
+                            binary += String.fromCharCode(bytes[i]);
+                        }
+                        return {
+                            name: file.name,
+                            type: file.type,
+                            size: file.size,
+                            data: btoa(binary)
+                        };
+                    }));
+
+                    const sessionData = {
+                        files: filesData,
+                        filesMeta: this.filesMeta,
+                        currentStep: this.currentStep,
+                        stevilkaZadeve: document.getElementById('stevilka-zadeve')?.value || '',
+                        eupRabaPairs: this.eupRabaPairs,
+                        keyData: this.keyData,
+                        results: this.results,
+                        sessionId: this.sessionId,
+                        timestamp: new Date().toISOString()
+                    };
+
+                    localStorage.setItem('mnenja_local_session', JSON.stringify(sessionData));
+                    this.showToast('success', 'Seja shranjena', 'Lokalna seja je bila uspešno shranjena');
+                } catch (error) {
+                    console.error('Napaka pri shranjevanju seje:', error);
+                    this.showToast('error', 'Napaka', 'Ni bilo mogoče shraniti seje');
+                }
+            },
+
+            async loadSession() {
+                // Check if there's a local session
+                if (!this.hasLocalSession()) {
+                    this.showToast('info', 'Ni seje', 'Ni shranjene lokalne seje');
+                    return;
+                }
+
+                if (this.files.length > 0 && !confirm('Ali želite naložiti shranjeno sejo? Trenutne datoteke bodo zamenjane.')) {
+                    return;
+                }
+
+                try {
+                    const sessionData = JSON.parse(localStorage.getItem('mnenja_local_session'));
+
+                    // Restore files from base64
+                    this.files = await Promise.all(sessionData.files.map(async (fileData) => {
+                        const binary = atob(fileData.data);
+                        const bytes = new Uint8Array(binary.length);
+                        for (let i = 0; i < binary.length; i++) {
+                            bytes[i] = binary.charCodeAt(i);
+                        }
+                        return new File([bytes], fileData.name, { type: fileData.type });
+                    }));
+
+                    this.filesMeta = sessionData.filesMeta || {};
+                    this.currentStep = sessionData.currentStep || 1;
+                    this.eupRabaPairs = sessionData.eupRabaPairs || [];
+                    this.keyData = sessionData.keyData || {};
+                    this.results = sessionData.results || [];
+                    this.sessionId = sessionData.sessionId || null;
+
+                    // Restore UI
+                    if (sessionData.stevilkaZadeve) {
+                        document.getElementById('stevilka-zadeve').value = sessionData.stevilkaZadeve;
+                    }
+
+                    this.renderFileList();
+                    this.updatePdfPreviewButton();
+
+                    if (this.currentStep >= 2) {
+                        this.renderEupRabaPairs();
+                        this.renderKeyData();
+                    }
+
+                    if (this.currentStep >= 3) {
+                        this.renderResults();
+                    }
+
+                    this.updateUI();
+                    this.updateStepAccess();
+
+                    const timestamp = new Date(sessionData.timestamp).toLocaleString('sl-SI');
+                    this.showToast('success', 'Seja naložena', `Seja iz ${timestamp} je bila naložena`);
+                } catch (error) {
+                    console.error('Napaka pri nalaganju seje:', error);
+                    this.showToast('error', 'Napaka', 'Ni bilo mogoče naložiti seje');
+                }
+            },
+
+            clearLocalSession() {
+                localStorage.removeItem('mnenja_local_session');
+                this.showToast('info', 'Seja izbrisana', 'Lokalna seja je bila izbrisana');
+            },
+
+            hasLocalSession() {
+                return localStorage.getItem('mnenja_local_session') !== null;
             }
         };
 
