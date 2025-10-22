@@ -1153,22 +1153,27 @@
                     formData.append('municipality_slug', 'litija');
                     formData.append('files_meta_json', JSON.stringify(Object.values(this.filesMeta)));
 
-                    // Start progress polling before sending request
-                    const tempSessionId = Date.now().toString();
-
+                    // Klic API-ja za začetek procesiranja
+                    console.log('[Upload] Pošiljam zahtevo za ekstrakcijo podatkov');
                     const response = await fetch('/extract-data', { method: 'POST', body: formData });
                     if (!response.ok) throw new Error('API napaka');
 
-                    const data = await response.json();
-                    this.sessionId = data.session_id;
+                    const initData = await response.json();
+                    this.sessionId = initData.session_id;
+                    console.log('[Upload] Prejet session ID:', this.sessionId);
 
                     // Start progress polling with actual session ID
                     this.startProgressPolling(this.sessionId);
                     this.hideLoading();
 
-                    // Wait a bit for progress to show
-                    await new Promise(resolve => setTimeout(resolve, 500));
+                    // Polling za rezultate
+                    const resultData = await this.pollForExtractResult(this.sessionId);
 
+                    if (resultData.status === 'error') {
+                        throw new Error(resultData.message || 'Napaka pri procesiranju');
+                    }
+
+                    const data = resultData.data;
                     this.eupRabaPairs = (data.eup || []).map((eup, i) => ({ eup, raba: (data.namenska_raba || [])[i] || '' }));
                     if (this.eupRabaPairs.length === 0) this.eupRabaPairs = [{ eup: '', raba: '' }];
 
@@ -1185,6 +1190,7 @@
                     this.nextStep();
                     document.getElementById('extract-btn').disabled = false;
                 } catch (error) {
+                    console.error('[Upload] Napaka:', error);
                     this.hideLoading();
                     this.stopProgressPolling();
                     this.showToast('error', 'Napaka', error.message);
@@ -1302,9 +1308,6 @@
                 this.currentStep = 3;
                 this.updateUI();
 
-                // Start progress polling
-                this.startProgressPolling(this.sessionId);
-
                 try {
                     const payload = {
                         session_id: this.sessionId,
@@ -1315,6 +1318,7 @@
                         existing_results_map: {}
                     };
 
+                    console.log('[Analyze] Pošiljam zahtevo za analizo');
                     const response = await fetch('/analyze-report', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -1322,8 +1326,20 @@
                     });
 
                     if (!response.ok) throw new Error('Napaka pri analizi');
-                    const data = await response.json();
+                    const initData = await response.json();
+                    console.log('[Analyze] Analiza se začne, session ID:', initData.session_id);
 
+                    // Start progress polling
+                    this.startProgressPolling(this.sessionId);
+
+                    // Polling za rezultate analize
+                    const resultData = await this.pollForAnalyzeResult(this.sessionId);
+
+                    if (resultData.status === 'error') {
+                        throw new Error(resultData.message || 'Napaka pri analizi');
+                    }
+
+                    const data = resultData.data;
                     const resultsMap = data.results_map || {};
                     this.results = (data.zahteve || []).map(req => {
                         const result = resultsMap[req.id] || {};
@@ -1343,14 +1359,15 @@
                     this.renderResults();
                     this.stopProgressPolling();
                     this.updateStepAccess();
-                    
+
                     const compliantCount = this.results.filter(r => r.compliant).length;
                     const nonCompliantCount = this.results.filter(r => !r.compliant && !r.notRelevant).length;
                     const notRelevantCount = this.results.filter(r => r.notRelevant).length;
-                    this.showToast('success', 'Analiza končana', 
+                    this.showToast('success', 'Analiza končana',
                         `${compliantCount} skladnih, ${nonCompliantCount} neskladnih, ${notRelevantCount} ni relevantno`);
                     this.nextStep();
                 } catch (error) {
+                    console.error('[Analyze] Napaka:', error);
                     this.stopProgressPolling();
                     this.hideLoading();
                     this.showToast('error', 'Napaka pri analizi', error.message);
@@ -1931,6 +1948,78 @@
                 } else {
                     console.error('[Progress] Progress bar container not found!');
                 }
+            },
+
+            async pollForExtractResult(sessionId) {
+                console.log('[Polling] Začenjam polling za rezultate ekstrakcije:', sessionId);
+                let attempts = 0;
+                const maxAttempts = 300; // 5 minut (1s interval)
+
+                while (attempts < maxAttempts) {
+                    try {
+                        const response = await fetch(`/extract-data/result/${sessionId}`);
+                        if (!response.ok) {
+                            console.error('[Polling] Napaka pri pridobivanju rezultata:', response.status);
+                            throw new Error('Napaka pri pridobivanju rezultata');
+                        }
+
+                        const result = await response.json();
+                        console.log('[Polling] Rezultat:', result);
+
+                        if (result.status === 'completed') {
+                            console.log('[Polling] Proces končan, vračam rezultate');
+                            return result;
+                        } else if (result.status === 'error') {
+                            console.error('[Polling] Napaka pri procesiranju:', result.message);
+                            return result;
+                        }
+
+                        // Status je še vedno "processing", čakaj malo in poskusi ponovno
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        attempts++;
+                    } catch (error) {
+                        console.error('[Polling] Napaka:', error);
+                        throw error;
+                    }
+                }
+
+                throw new Error('Timeout - procesiranje traja predolgo');
+            },
+
+            async pollForAnalyzeResult(sessionId) {
+                console.log('[Polling] Začenjam polling za rezultate analize:', sessionId);
+                let attempts = 0;
+                const maxAttempts = 300; // 5 minut (1s interval)
+
+                while (attempts < maxAttempts) {
+                    try {
+                        const response = await fetch(`/analyze-report/result/${sessionId}`);
+                        if (!response.ok) {
+                            console.error('[Polling] Napaka pri pridobivanju rezultata analize:', response.status);
+                            throw new Error('Napaka pri pridobivanju rezultata');
+                        }
+
+                        const result = await response.json();
+                        console.log('[Polling] Rezultat analize:', result);
+
+                        if (result.status === 'completed') {
+                            console.log('[Polling] Analiza končana, vračam rezultate');
+                            return result;
+                        } else if (result.status === 'error') {
+                            console.error('[Polling] Napaka pri analizi:', result.message);
+                            return result;
+                        }
+
+                        // Status je še vedno "processing", čakaj malo in poskusi ponovno
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        attempts++;
+                    } catch (error) {
+                        console.error('[Polling] Napaka:', error);
+                        throw error;
+                    }
+                }
+
+                throw new Error('Timeout - analiza traja predolgo');
             },
 
             showLoading(message) {

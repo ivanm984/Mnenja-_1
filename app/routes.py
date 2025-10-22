@@ -156,8 +156,134 @@ async def remove_saved_session(session_id: str):
     await db_manager.delete_session(session_id)
     return {"message": "Shranjena analiza je izbrisana.", "session_id": session_id}
 
+
+async def _process_extract_data_background(
+    session_id: str,
+    pdf_files: List[UploadFile],
+    page_overrides: Dict[str, Any],
+    municipality_slug: Optional[str],
+):
+    """
+    Background task za procesiranje PDF datotek in AI analizo.
+
+    Args:
+        session_id: ID seje
+        pdf_files: Seznam PDF datotek
+        page_overrides: Metapodatki za pretvorbo strani
+        municipality_slug: Oznaka občine
+    """
+    try:
+        start_time = time.perf_counter()
+
+        # Obdelva PDF datotek
+        await cache_manager.store_session_data(f"progress:{session_id}", {
+            "step": 1,
+            "total_steps": 4,
+            "message": f"Ekstrakcija besedila iz {len(pdf_files)} PDF dokumentov...",
+            "percentage": 10
+        })
+
+        project_text, all_images, files_manifest = await PDFService.process_pdf_files(
+            pdf_files, page_overrides, session_id
+        )
+
+        # Shranjevanje slik
+        await cache_manager.store_session_data(f"progress:{session_id}", {
+            "step": 2,
+            "total_steps": 4,
+            "message": "Analiza slik in priprava podatkov...",
+            "percentage": 25
+        })
+        image_paths = await save_images_for_session(session_id, all_images)
+
+        # Pridobitev profila občine
+        profile = get_municipality_profile(municipality_slug)
+
+        logger.info(f"[{session_id}] Začenjam vzporedne AI klice za občino {profile.slug}")
+        await cache_manager.store_session_data(f"progress:{session_id}", {
+            "step": 3,
+            "total_steps": 4,
+            "message": "AI analiza dokumentacije (EUP, namenska raba, metapodatki)...",
+            "percentage": 40
+        })
+
+        gemini_start_time = time.perf_counter()
+
+        # Vzporedni AI klici
+        ai_details, metadata, key_data = await asyncio.gather(
+            ai_service.extract_eup_and_raba(project_text, all_images),
+            ai_service.extract_metadata(project_text),
+            ai_service.extract_key_data(project_text, all_images),
+        )
+
+        gemini_duration = time.perf_counter() - gemini_start_time
+        logger.info(f"[{session_id}] AI klici končani v {gemini_duration:.2f}s")
+
+        await cache_manager.store_session_data(f"progress:{session_id}", {
+            "step": 4,
+            "total_steps": 4,
+            "message": "Shranjevanje rezultatov...",
+            "percentage": 85
+        })
+
+        # Združitev metapodatkov
+        merged_metadata = {**profile.default_metadata, **metadata}
+        investor_name = (merged_metadata.get("investitor") or "").strip()
+        investor_address = (merged_metadata.get("investitor_naslov") or "").strip()
+        merged_metadata["investitor1_ime"] = investor_name
+        merged_metadata["investitor1_naslov"] = investor_address
+
+        # Shranjevanje seje
+        session_data = {
+            "project_text": project_text,
+            "image_paths": image_paths,
+            "metadata": merged_metadata,
+            "ai_details": ai_details,
+            "key_data": key_data,
+            "source_files": files_manifest,
+            "municipality_slug": profile.slug,
+            "municipality_name": profile.name,
+        }
+        await cache_manager.store_session_data(session_id, session_data)
+
+        # Priprava podatkov za rezultat (shranjeno v cache za frontend)
+        result_data = {
+            "session_id": session_id,
+            "municipality_slug": profile.slug,
+            "municipality_name": profile.name,
+            "eup": ai_details.get("eup", []),
+            "namenska_raba": ai_details.get("namenska_raba", []),
+            **merged_metadata,
+            **key_data,
+        }
+        await cache_manager.store_session_data(f"result:{session_id}", result_data)
+
+        await cache_manager.store_session_data(f"progress:{session_id}", {
+            "step": 4,
+            "total_steps": 4,
+            "message": "Končano!",
+            "percentage": 100,
+            "completed": True
+        })
+
+        total_duration = time.perf_counter() - start_time
+        logger.info(f"[{session_id}] Proces končan v {total_duration:.2f}s")
+
+    except Exception as e:
+        logger.error(f"[{session_id}] Napaka pri procesiranju: {e}", exc_info=True)
+        await cache_manager.store_session_data(f"progress:{session_id}", {
+            "step": 0,
+            "total_steps": 4,
+            "message": f"Napaka: {str(e)}",
+            "percentage": 0,
+            "completed": True,
+            "error": True
+        })
+
+
 @router.post("/extract-data")
 async def extract_data(
+    background_tasks: BackgroundTasks,
     pdf_files: List[UploadFile] = File(...),
     files_meta_json: Optional[str] = Form(None),
     municipality_slug: Optional[str] = Form(None),
@@ -167,13 +293,14 @@ async def extract_data(
     Ekstrahira podatke iz naloženih PDF datotek in izvede začetno AI analizo.
 
     Args:
+        background_tasks: FastAPI background tasks
         pdf_files: Seznam PDF datotek za analizo
         files_meta_json: Opcijski JSON z metapodatki (strani za pretvorbo)
         municipality_slug: Oznaka občine (privzeto iz config)
         api_key: API ključ za avtentikacijo
 
     Returns:
-        Dict z ekstrahiranimi podatki: session_id, eup, namenska_raba, metadata
+        Dict z session_id za polling progress-a
 
     Raises:
         HTTPException(400): Če datoteke ne vsebujejo besedila ali so neveljavne
@@ -184,7 +311,7 @@ async def extract_data(
     session_id = str(start_time)
     logger.info(f"[{session_id}] Začetek /extract-data z {len(pdf_files)} datotekami")
 
-    # Shrani progress v cache za frontend polling
+    # Shrani začetni progress v cache za frontend polling
     progress_data = {
         "step": 1,
         "total_steps": 4,
@@ -197,121 +324,247 @@ async def extract_data(
     # Parsiranje metapodatkov
     page_overrides = _parse_files_metadata(files_meta_json)
 
-    # Obdelva PDF datotek
-    await cache_manager.store_session_data(f"progress:{session_id}", {
-        "step": 1,
-        "total_steps": 4,
-        "message": f"Ekstrakcija besedila iz {len(pdf_files)} PDF dokumentov...",
-        "percentage": 10
-    })
-
-    project_text, all_images, files_manifest = await PDFService.process_pdf_files(
-        pdf_files, page_overrides, session_id
+    # Začni procesiranje v ozadju
+    background_tasks.add_task(
+        _process_extract_data_background,
+        session_id,
+        pdf_files,
+        page_overrides,
+        municipality_slug
     )
 
-    # Shranjevanje slik
-    await cache_manager.store_session_data(f"progress:{session_id}", {
-        "step": 2,
-        "total_steps": 4,
-        "message": "Analiza slik in priprava podatkov...",
-        "percentage": 25
-    })
-    image_paths = await save_images_for_session(session_id, all_images)
+    # Takoj vrni session_id, da lahko frontend začne polling
+    return {"session_id": session_id, "status": "processing"}
 
-    # Pridobitev profila občine
-    profile = get_municipality_profile(municipality_slug)
 
-    logger.info(f"[{session_id}] Začenjam vzporedne AI klice za občino {profile.slug}")
-    await cache_manager.store_session_data(f"progress:{session_id}", {
-        "step": 3,
-        "total_steps": 4,
-        "message": "AI analiza dokumentacije (EUP, namenska raba, metapodatki)...",
-        "percentage": 40
-    })
+@router.get("/extract-data/result/{session_id}")
+async def get_extract_data_result(session_id: str):
+    """
+    Vrne rezultat ekstrakcije podatkov, ko je procesiranje končano.
 
-    gemini_start_time = time.perf_counter()
+    Args:
+        session_id: ID seje
 
-    # Vzporedni AI klici
-    ai_details, metadata, key_data = await asyncio.gather(
-        ai_service.extract_eup_and_raba(project_text, all_images),
-        ai_service.extract_metadata(project_text),
-        ai_service.extract_key_data(project_text, all_images),
-    )
+    Returns:
+        Dict z ekstrahiranimi podatki ali napako
+    """
+    # Preveri progress
+    progress = await cache_manager.retrieve_session_data(f"progress:{session_id}")
+    if not progress:
+        raise HTTPException(status_code=404, detail="Seja ne obstaja")
 
-    gemini_duration = time.perf_counter() - gemini_start_time
-    logger.info(f"[{session_id}] AI klici končani v {gemini_duration:.2f}s")
+    if not progress.get("completed"):
+        return {"status": "processing", "progress": progress}
 
-    await cache_manager.store_session_data(f"progress:{session_id}", {
-        "step": 4,
-        "total_steps": 4,
-        "message": "Shranjevanje rezultatov...",
-        "percentage": 85
-    })
+    if progress.get("error"):
+        return {"status": "error", "message": progress.get("message", "Napaka pri procesiranju")}
 
-    # Združitev metapodatkov
-    merged_metadata = {**profile.default_metadata, **metadata}
-    investor_name = (merged_metadata.get("investitor") or "").strip()
-    investor_address = (merged_metadata.get("investitor_naslov") or "").strip()
-    merged_metadata["investitor1_ime"] = investor_name
-    merged_metadata["investitor1_naslov"] = investor_address
+    # Pridobi rezultat
+    result = await cache_manager.retrieve_session_data(f"result:{session_id}")
+    if not result:
+        raise HTTPException(status_code=404, detail="Rezultat ne obstaja")
 
-    # Shranjevanje seje
-    session_data = {
-        "project_text": project_text,
-        "image_paths": image_paths,
-        "metadata": merged_metadata,
-        "ai_details": ai_details,
-        "key_data": key_data,
-        "source_files": files_manifest,
-        "municipality_slug": profile.slug,
-        "municipality_name": profile.name,
-    }
-    await cache_manager.store_session_data(session_id, session_data)
+    return {"status": "completed", "data": result}
 
-    # Priprava odgovora
-    response_data = {
-        "session_id": session_id,
-        "municipality_slug": profile.slug,
-        "municipality_name": profile.name,
-        "eup": ai_details.get("eup", []),
-        "namenska_raba": ai_details.get("namenska_raba", []),
-        **merged_metadata,
-        **key_data,
-    }
 
-    await cache_manager.store_session_data(f"progress:{session_id}", {
-        "step": 4,
-        "total_steps": 4,
-        "message": "Končano!",
-        "percentage": 100,
-        "completed": True
-    })
+async def _process_analyze_report_background(
+    session_id: str,
+    payload: AnalysisReportPayload,
+):
+    """
+    Background task za analizo skladnosti zahtev.
 
-    total_duration = time.perf_counter() - start_time
-    logger.info(f"[{session_id}] Proces končan v {total_duration:.2f}s")
-    return response_data
+    Args:
+        session_id: ID seje
+        payload: Podatki za analizo
+    """
+    try:
+        start_time = time.perf_counter()
+
+        data = await cache_manager.retrieve_session_data(session_id)
+        if not data:
+            raise HTTPException(status_code=404, detail="Seja je potekla ali ne obstaja.")
+
+        image_paths = data.get("image_paths", [])
+        images_for_analysis = await load_images_from_paths(image_paths) if image_paths else []
+        logger.info(f"[{session_id}] Naloženih {len(images_for_analysis)} slik za podrobno analizo.")
+
+        final_eup_list_cleaned = list(dict.fromkeys(e.strip() for e in payload.final_eup_list if e.strip()))
+        final_raba_list_cleaned = list(dict.fromkeys(r.strip().upper() for r in payload.final_raba_list if r.strip()))
+
+        if not final_raba_list_cleaned:
+            raise HTTPException(status_code=400, detail="Namenska raba manjka.")
+
+        await cache_manager.store_session_data(f"progress:{session_id}", {
+            "step": 2,
+            "total_steps": 5,
+            "message": "Generiranje zahtev skladnosti iz prostorskih aktov...",
+            "percentage": 15
+        })
+
+        municipality_profile = get_municipality_profile(data.get("municipality_slug"))
+        zahteve = build_requirements_from_db(
+            final_eup_list_cleaned,
+            final_raba_list_cleaned,
+            data["project_text"],
+            municipality_slug=municipality_profile.slug,
+        )
+        zahteve_za_analizo = [z for z in zahteve if z["id"] in payload.selected_ids] if payload.selected_ids else list(zahteve)
+
+        if not zahteve_za_analizo:
+            raise HTTPException(status_code=400, detail="Ni izbranih zahtev za analizo.")
+
+        await cache_manager.store_session_data(f"progress:{session_id}", {
+            "step": 3,
+            "total_steps": 5,
+            "message": f"Pripravljam AI analizo za {len(zahteve_za_analizo)} zahtev...",
+            "percentage": 30
+        })
+
+        final_key_data = payload.key_data.dict()
+
+        municipality_context_lines = [
+            f"Občina: {municipality_profile.name} (oznaka: {municipality_profile.slug})",
+        ]
+        if municipality_profile.prompt_context:
+            municipality_context_lines.append(municipality_profile.prompt_context)
+        municipality_context_lines.extend(
+            f"- {rule}" for rule in municipality_profile.prompt_special_rules if rule
+        )
+        municipality_context_block = "\n".join(municipality_context_lines).strip()
+
+        modified_project_text = f"""
+            --- METAPODATKI PROJEKTA ---
+            {data.get('metadata', {})}
+            --- KONTEKST OBČINE ---
+            {municipality_context_block}
+            --- KLJUČNI GABARITNI IN LOKACIJSKI PODATKI PROJEKTA (Ekstrahirano in POTRJENO) ---
+            {final_key_data}
+            --- DOKUMENTACIJA (Besedilo in grafike) ---
+            {data.get('project_text', '')}
+            """
+
+        zahteve_chunks = list(chunk_list(zahteve_za_analizo, ANALYSIS_CHUNK_SIZE))
+        izrazi_text = get_izrazi_text(municipality_profile.slug)
+        uredba_text = get_uredba_text(municipality_profile.slug)
+        tasks = []
+        for chunk in zahteve_chunks:
+            prompt = build_prompt(
+                modified_project_text,
+                chunk,
+                izrazi_text,
+                uredba_text,
+                municipality_profile=municipality_profile,
+            )
+            task = ai_service.analyze_compliance(prompt, images_for_analysis)
+            tasks.append(task)
+
+        logger.info(f"[{session_id}] Začenjam {len(tasks)} vzporednih AI klicev")
+        await cache_manager.store_session_data(f"progress:{session_id}", {
+            "step": 4,
+            "total_steps": 5,
+            "message": f"AI analiza poteka - to lahko traja 2-3 minute ({len(zahteve_za_analizo)} zahtev)...",
+            "percentage": 40
+        })
+
+        gemini_start_time = time.perf_counter()
+        ai_responses = await asyncio.gather(*tasks, return_exceptions=True)
+        gemini_duration = time.perf_counter() - gemini_start_time
+        logger.info(f"[{session_id}] AI analiza končana v {gemini_duration:.2f}s")
+
+        await cache_manager.store_session_data(f"progress:{session_id}", {
+            "step": 5,
+            "total_steps": 5,
+            "message": "Procesiranje rezultatov...",
+            "percentage": 90
+        })
+
+        combined_results_map = {**payload.existing_results_map}
+        for response_obj, chunk in zip(ai_responses, zahteve_chunks):
+            if isinstance(response_obj, Exception):
+                logger.error(f"[{session_id}] AI klic za sklop ni uspel: {response_obj}")
+                continue
+            try:
+                chunk_results = ai_service.parse_ai_response(response_obj, chunk)
+                combined_results_map.update(chunk_results)
+            except HTTPException as e:
+                logger.error(f"[{session_id}] Napaka pri parsiranju: {e.detail}")
+
+        non_compliant_ids = [k for k, v in combined_results_map.items() if "nesklad" in v.get("skladnost", "").lower()]
+        revisions = await db_manager.fetch_revisions(session_id)
+        requirement_revisions = {}
+        for rev in revisions:
+            if rev_id := rev.get("requirement_id"):
+                requirement_revisions.setdefault(rev_id, []).append(rev)
+
+        final_report_data = {
+            "zahteve": zahteve,
+            "results_map": combined_results_map,
+            "metadata": data.get("metadata", {}),
+            "final_key_data": final_key_data,
+            "source_files": data.get("source_files", []),
+            "municipality_slug": municipality_profile.slug,
+            "municipality_name": municipality_profile.name,
+        }
+        await cache_manager.store_session_data(f"report:{session_id}", final_report_data)
+
+        # Shrani rezultat za frontend
+        analysis_result = {
+            "status": "success",
+            "results_map": combined_results_map,
+            "zahteve": zahteve,
+            "non_compliant_ids": non_compliant_ids,
+            "requirement_revisions": requirement_revisions,
+        }
+        await cache_manager.store_session_data(f"analysis_result:{session_id}", analysis_result)
+
+        final_progress_data = {
+            "step": 5,
+            "total_steps": 5,
+            "message": "Analiza končana!",
+            "percentage": 100,
+            "completed": True
+        }
+        await cache_manager.store_session_data(f"progress:{session_id}", final_progress_data)
+        logger.info(f"[{session_id}] Progress končan: {final_progress_data}")
+
+        total_duration = time.perf_counter() - start_time
+        logger.info(f"[{session_id}] Proces končan v {total_duration:.2f}s")
+
+    except Exception as e:
+        logger.error(f"[{session_id}] Napaka pri analizi: {e}", exc_info=True)
+        await cache_manager.store_session_data(f"progress:{session_id}", {
+            "step": 0,
+            "total_steps": 5,
+            "message": f"Napaka: {str(e)}",
+            "percentage": 0,
+            "completed": True,
+            "error": True
+        })
+
 
 @router.post("/analyze-report")
 async def analyze_report(
+    background_tasks: BackgroundTasks,
     payload: AnalysisReportPayload,
     api_key: str = Depends(verify_api_key)
 ):
     """
-    Izvede podrobno analizo skladnosti zahtev.
+    Izvede podrobno analizo skladnosti zahtev v ozadju.
 
     Args:
+        background_tasks: FastAPI background tasks
         payload: Podatki za analizo (EUP, raba, ključni podatki, izbrane zahteve)
         api_key: API ključ za avtentikacijo
 
     Returns:
-        Dict z rezultati analize
+        Dict z session_id za polling progress-a
 
     Raises:
         HTTPException(400): Če manjkajo potrebni podatki
         HTTPException(404): Če seja ne obstaja
         HTTPException(500): Če AI analiza ne uspe
     """
-    start_time = time.perf_counter()
     session_id = payload.session_id
     logger.info(f"[{session_id}] Začetek /analyze-report")
 
@@ -325,153 +578,50 @@ async def analyze_report(
     await cache_manager.store_session_data(f"progress:{session_id}", progress_data)
     logger.info(f"[{session_id}] Progress posodobljen: {progress_data}")
 
+    # Preveri, ali seja obstaja
     data = await cache_manager.retrieve_session_data(session_id)
     if not data:
         raise HTTPException(status_code=404, detail="Seja je potekla ali ne obstaja.")
 
-    image_paths = data.get("image_paths", [])
-    images_for_analysis = await load_images_from_paths(image_paths) if image_paths else []
-    logger.info(f"[{session_id}] Naloženih {len(images_for_analysis)} slik za podrobno analizo.")
-    
-    final_eup_list_cleaned = list(dict.fromkeys(e.strip() for e in payload.final_eup_list if e.strip()))
-    final_raba_list_cleaned = list(dict.fromkeys(r.strip().upper() for r in payload.final_raba_list if r.strip()))
-
-    if not final_raba_list_cleaned:
-        raise HTTPException(status_code=400, detail="Namenska raba manjka.")
-
-    await cache_manager.store_session_data(f"progress:{session_id}", {
-        "step": 2,
-        "total_steps": 5,
-        "message": "Generiranje zahtev skladnosti iz prostorskih aktov...",
-        "percentage": 15
-    })
-
-    municipality_profile = get_municipality_profile(data.get("municipality_slug"))
-    zahteve = build_requirements_from_db(
-        final_eup_list_cleaned,
-        final_raba_list_cleaned,
-        data["project_text"],
-        municipality_slug=municipality_profile.slug,
+    # Začni procesiranje v ozadju
+    background_tasks.add_task(
+        _process_analyze_report_background,
+        session_id,
+        payload
     )
-    zahteve_za_analizo = [z for z in zahteve if z["id"] in payload.selected_ids] if payload.selected_ids else list(zahteve)
 
-    if not zahteve_za_analizo:
-        raise HTTPException(status_code=400, detail="Ni izbranih zahtev za analizo.")
+    # Takoj vrni session_id, da lahko frontend začne polling
+    return {"session_id": session_id, "status": "processing"}
 
-    await cache_manager.store_session_data(f"progress:{session_id}", {
-        "step": 3,
-        "total_steps": 5,
-        "message": f"Pripravljam AI analizo za {len(zahteve_za_analizo)} zahtev...",
-        "percentage": 30
-    })
 
-    final_key_data = payload.key_data.dict()
+@router.get("/analyze-report/result/{session_id}")
+async def get_analyze_report_result(session_id: str):
+    """
+    Vrne rezultat analize, ko je procesiranje končano.
 
-    municipality_context_lines = [
-        f"Občina: {municipality_profile.name} (oznaka: {municipality_profile.slug})",
-    ]
-    if municipality_profile.prompt_context:
-        municipality_context_lines.append(municipality_profile.prompt_context)
-    municipality_context_lines.extend(
-        f"- {rule}" for rule in municipality_profile.prompt_special_rules if rule
-    )
-    municipality_context_block = "\n".join(municipality_context_lines).strip()
+    Args:
+        session_id: ID seje
 
-    modified_project_text = f"""
-        --- METAPODATKI PROJEKTA ---
-        {data.get('metadata', {})}
-        --- KONTEKST OBČINE ---
-        {municipality_context_block}
-        --- KLJUČNI GABARITNI IN LOKACIJSKI PODATKI PROJEKTA (Ekstrahirano in POTRJENO) ---
-        {final_key_data}
-        --- DOKUMENTACIJA (Besedilo in grafike) ---
-        {data.get('project_text', '')}
-        """
+    Returns:
+        Dict z rezultati analize ali napako
+    """
+    # Preveri progress
+    progress = await cache_manager.retrieve_session_data(f"progress:{session_id}")
+    if not progress:
+        raise HTTPException(status_code=404, detail="Seja ne obstaja")
 
-    zahteve_chunks = list(chunk_list(zahteve_za_analizo, ANALYSIS_CHUNK_SIZE))
-    izrazi_text = get_izrazi_text(municipality_profile.slug)
-    uredba_text = get_uredba_text(municipality_profile.slug)
-    tasks = []
-    for chunk in zahteve_chunks:
-        prompt = build_prompt(
-            modified_project_text,
-            chunk,
-            izrazi_text,
-            uredba_text,
-            municipality_profile=municipality_profile,
-        )
-        task = ai_service.analyze_compliance(prompt, images_for_analysis)
-        tasks.append(task)
-    
-    logger.info(f"[{session_id}] Začenjam {len(tasks)} vzporednih AI klicev")
-    await cache_manager.store_session_data(f"progress:{session_id}", {
-        "step": 4,
-        "total_steps": 5,
-        "message": f"AI analiza poteka - to lahko traja 2-3 minute ({len(zahteve_za_analizo)} zahtev)...",
-        "percentage": 40
-    })
+    if not progress.get("completed"):
+        return {"status": "processing", "progress": progress}
 
-    gemini_start_time = time.perf_counter()
-    ai_responses = await asyncio.gather(*tasks, return_exceptions=True)
-    gemini_duration = time.perf_counter() - gemini_start_time
-    logger.info(f"[{session_id}] AI analiza končana v {gemini_duration:.2f}s")
+    if progress.get("error"):
+        return {"status": "error", "message": progress.get("message", "Napaka pri analizi")}
 
-    await cache_manager.store_session_data(f"progress:{session_id}", {
-        "step": 5,
-        "total_steps": 5,
-        "message": "Procesiranje rezultatov...",
-        "percentage": 90
-    })
+    # Pridobi rezultat
+    result = await cache_manager.retrieve_session_data(f"analysis_result:{session_id}")
+    if not result:
+        raise HTTPException(status_code=404, detail="Rezultat ne obstaja")
 
-    combined_results_map = {**payload.existing_results_map}
-    for response_obj, chunk in zip(ai_responses, zahteve_chunks):
-        if isinstance(response_obj, Exception):
-            logger.error(f"[{session_id}] AI klic za sklop ni uspel: {response_obj}")
-            continue
-        try:
-            chunk_results = ai_service.parse_ai_response(response_obj, chunk)
-            combined_results_map.update(chunk_results)
-        except HTTPException as e:
-            logger.error(f"[{session_id}] Napaka pri parsiranju: {e.detail}")
-
-    non_compliant_ids = [k for k, v in combined_results_map.items() if "nesklad" in v.get("skladnost", "").lower()]
-    revisions = await db_manager.fetch_revisions(session_id)
-    requirement_revisions = {}
-    for rev in revisions:
-        if rev_id := rev.get("requirement_id"):
-            requirement_revisions.setdefault(rev_id, []).append(rev)
-
-    final_report_data = {
-        "zahteve": zahteve,
-        "results_map": combined_results_map,
-        "metadata": data.get("metadata", {}),
-        "final_key_data": final_key_data,
-        "source_files": data.get("source_files", []),
-        "municipality_slug": municipality_profile.slug,
-        "municipality_name": municipality_profile.name,
-    }
-    await cache_manager.store_session_data(f"report:{session_id}", final_report_data)
-
-    final_progress_data = {
-        "step": 5,
-        "total_steps": 5,
-        "message": "Analiza končana!",
-        "percentage": 100,
-        "completed": True
-    }
-    await cache_manager.store_session_data(f"progress:{session_id}", final_progress_data)
-    logger.info(f"[{session_id}] Progress končan: {final_progress_data}")
-
-    total_duration = time.perf_counter() - start_time
-    logger.info(f"[{session_id}] Proces končan v {total_duration:.2f}s")
-
-    return {
-        "status": "success",
-        "results_map": combined_results_map,
-        "zahteve": zahteve,
-        "non_compliant_ids": non_compliant_ids,
-        "requirement_revisions": requirement_revisions,
-    }
+    return {"status": "completed", "data": result}
 
 @router.post("/upload-revision")
 async def upload_revision(
