@@ -100,14 +100,6 @@ def _copy_sync_to_tempfile(
 
         if isinstance(source, (str, Path)):
             source_path = Path(source)
-            if not source_path.is_absolute():
-                potential_path = DATA_DIR / source_path
-                if potential_path.exists():
-                    source_path = potential_path
-
-            if not source_path.exists():
-                raise FileNotFoundError(source_path)
-
             with source_path.open("rb") as src:
                 shutil.copyfileobj(src, tmp)
             total_size = source_path.stat().st_size
@@ -136,16 +128,12 @@ async def stream_upload_to_tempfile(
 
     try:
         if isinstance(upload, UploadFile):
-            seek = getattr(upload, "seek", None)
-            if callable(seek):
-                try:
-                    result = seek(0)
-                    if isawaitable(result):
-                        await result
-                except Exception:
-                    file_obj = getattr(upload, "file", None)
-                    if file_obj and hasattr(file_obj, "seek"):
-                        file_obj.seek(0)
+            try:
+                await upload.seek(0)
+            except Exception:
+                file_obj = getattr(upload, "file", None)
+                if file_obj and hasattr(file_obj, "seek"):
+                    file_obj.seek(0)
 
             suffix = _detect_suffix(upload)
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
