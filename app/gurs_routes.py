@@ -5,8 +5,9 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 import xml.etree.ElementTree as ET
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
@@ -35,6 +36,12 @@ GURS_MAP_HTML = PROJECT_ROOT / "app" / "gurs_map.html"
 # Spremenjeno: Boljši cache, ki hrani koordinate IN namensko rabo
 PARCEL_DATA_CACHE: Dict[str, Dict[str, Any]] = {}
 
+WMS_CAPABILITIES_TTL_SECONDS = 3600
+WMS_CAPABILITIES_CACHE: Dict[str, Any] = {
+    "layers": None,
+    "fetched_at": 0.0,
+}
+
 
 @router.get("/map", response_class=HTMLResponse)
 async def gurs_map_page():
@@ -46,8 +53,22 @@ async def get_map_config(session_id: Optional[str] = None):
     saved_state_raw = await db_manager.fetch_map_state(session_id) if session_id else None
     saved_state = None
     if saved_state_raw: saved_state = {"center": [saved_state_raw["center_lon"], saved_state_raw["center_lat"]], "zoom": saved_state_raw["zoom"], "updated_at": saved_state_raw["updated_at"]}
-    base_layers = [_build_layer_payload(id, cfg) for id, cfg in GURS_WMS_LAYERS.items() if cfg.get("category") == "base"]
-    overlay_layers = [_build_layer_payload(id, cfg) for id, cfg in GURS_WMS_LAYERS.items() if cfg.get("category") == "overlay"]
+    available_layers, _ = await _load_wms_capabilities()
+    layer_lookup = {layer["name"]: layer for layer in available_layers if layer.get("name")}
+
+    base_layers = [
+        _build_layer_payload(id, cfg, available_layers, layer_lookup)
+        for id, cfg in GURS_WMS_LAYERS.items()
+        if cfg.get("category") == "base"
+    ]
+    overlay_layers = [
+        _build_layer_payload(id, cfg, available_layers, layer_lookup)
+        for id, cfg in GURS_WMS_LAYERS.items()
+        if cfg.get("category") == "overlay"
+    ]
+
+    base_layers = [layer for layer in base_layers if layer]
+    overlay_layers = [layer for layer in overlay_layers if layer]
     return {"success": True, "config": {"default_center": list(DEFAULT_MAP_CENTER), "default_zoom": DEFAULT_MAP_ZOOM, "wms_url": GURS_WMS_URL, "raster_wms_url": GURS_RASTER_WMS_URL, "rpe_wms_url": GURS_RPE_WMS_URL, "base_layers": base_layers, "overlay_layers": overlay_layers, "saved_state": saved_state}}
 
 @router.get("/map-state/{session_id}")
@@ -214,20 +235,69 @@ async def get_parcel_info(parcela_st: str, ko: Optional[str] = Query(None, descr
         "message": "Uporabljeni simulirani podatki." if not ENABLE_REAL_GURS_API else "Parcela ni najdena -> simulirani podatki."}
 
 @router.get("/wms-capabilities")
-async def get_wms_capabilities():
-    layers, source, target_wms_url = [], "remote", GURS_WMS_URL
-    try:
-        async with httpx.AsyncClient(timeout=GURS_API_TIMEOUT) as client:
-            logger.debug(f"Zahtevam GetCapabilities z: {target_wms_url}"); response = await client.get(target_wms_url, params={"service": "WMS", "request": "GetCapabilities", "version": "1.3.0"})
-            response.raise_for_status(); logger.debug(f"GetCapabilities OK: {response.status_code}"); layers = _parse_wms_capabilities(response.text); logger.info(f"Parsanih {len(layers)} slojev.")
-    except Exception as exc: source = "fallback"; logger.warning(f"[GURS] GetCapabilities ni uspel ({target_wms_url}): {exc}"); layers = [{"name": cfg.get("name", id), "title": cfg.get("title", id), "description": cfg.get("description", "")} for id, cfg in GURS_WMS_LAYERS.items() if cfg.get("name")]; logger.info(f"Uporabljam {len(layers)} fallback slojev.")
-    return {"success": True, "layers": layers, "wms_url": target_wms_url, "source": source}
+async def get_wms_capabilities(refresh: bool = Query(False, description="Prisili ponovno poizvedbo")):
+    layers, source = await _load_wms_capabilities(force_refresh=refresh)
+    if not layers:
+        fallback_layers = [
+            {"name": cfg.get("name", id), "title": cfg.get("title", id), "description": cfg.get("description", "")}
+            for id, cfg in GURS_WMS_LAYERS.items()
+            if cfg.get("name") or cfg.get("name_candidates")
+        ]
+        logger.info(f"[GURS] GetCapabilities ni na voljo -> {len(fallback_layers)} fallback slojev.")
+        return {"success": True, "layers": fallback_layers, "wms_url": GURS_WMS_URL, "source": "fallback"}
 
-def _build_layer_payload(layer_id: str, layer_cfg: Dict[str, Any]) -> Dict[str, Any]:
-    default_url = GURS_WMS_URL;
-    if layer_id == 'ortofoto': default_url = GURS_RASTER_WMS_URL
-    elif layer_id == 'namenska_raba': default_url = GURS_RPE_WMS_URL # Popravljeno: Ta sloj uporablja RPE URL
-    return {"id": layer_id, "name": layer_cfg.get("name"), "title": layer_cfg.get("title", layer_id), "description": layer_cfg.get("description", ""), "url": layer_cfg.get("url", default_url), "format": layer_cfg.get("format", "image/png"), "transparent": layer_cfg.get("transparent", True), "default_visible": layer_cfg.get("default_visible", False), "always_on": layer_cfg.get("always_on", False), "category": layer_cfg.get("category", "overlay")}
+    return {"success": True, "layers": layers, "wms_url": GURS_WMS_URL, "source": source}
+
+def _build_layer_payload(
+    layer_id: str,
+    layer_cfg: Dict[str, Any],
+    available_layers: Sequence[Dict[str, Any]] | None,
+    available_lookup: Dict[str, Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    selected_layer = _select_layer_metadata(layer_id, layer_cfg, available_layers, available_lookup)
+    if not selected_layer:
+        logger.warning(f"[GURS] Sloj '{layer_id}' nima veljavnega imena -> preskočen.")
+        return None
+
+    selected_name = selected_layer.get("name")
+    if not selected_name:
+        logger.warning(f"[GURS] Sloj '{layer_id}' nima določenega imena -> preskočen.")
+        return None
+
+    if layer_cfg.get("name") and selected_name != layer_cfg.get("name"):
+        logger.debug(
+            "[GURS] Sloj '%s' uporablja dinamično ime '%s' (namesto '%s').",
+            layer_id,
+            selected_name,
+            layer_cfg.get("name"),
+        )
+
+    default_url = GURS_WMS_URL
+    if layer_id == "ortofoto":
+        default_url = GURS_RASTER_WMS_URL
+    elif layer_id == "namenska_raba":
+        default_url = GURS_RPE_WMS_URL  # Popravljeno: Ta sloj uporablja RPE URL
+
+    title = layer_cfg.get("title") or selected_layer.get("title") or layer_id
+    description = layer_cfg.get("description") or selected_layer.get("description", "")
+
+    payload = {
+        "id": layer_id,
+        "name": selected_name,
+        "title": title,
+        "description": description,
+        "url": layer_cfg.get("url", default_url),
+        "format": layer_cfg.get("format", "image/png"),
+        "transparent": layer_cfg.get("transparent", True),
+        "default_visible": layer_cfg.get("default_visible", False),
+        "always_on": layer_cfg.get("always_on", False),
+        "category": layer_cfg.get("category", "overlay"),
+    }
+
+    if "opacity" in layer_cfg:
+        payload["opacity"] = layer_cfg["opacity"]
+
+    return payload
 
 def _parse_wms_capabilities(xml_text: str) -> List[Dict[str, Any]]:
     layers: List[Dict[str, Any]] = []
@@ -242,14 +312,153 @@ def _parse_wms_capabilities(xml_text: str) -> List[Dict[str, Any]]:
     except Exception as exc: logger.error(f"[GURS] Nepričakovana napaka parsanja WMS XML: {exc}", exc_info=True)
     logger.debug(f"Parsanih {len(layers)} slojev iz XML."); return layers
 
+
+async def _load_wms_capabilities(force_refresh: bool = False) -> tuple[List[Dict[str, Any]], str]:
+    """Naloži WMS sloje iz GetCapabilities z osnovnim cachingom."""
+
+    now = time.monotonic()
+    cached_layers = WMS_CAPABILITIES_CACHE.get("layers") or []
+    cached_age = now - WMS_CAPABILITIES_CACHE.get("fetched_at", 0.0)
+
+    if cached_layers and not force_refresh and cached_age < WMS_CAPABILITIES_TTL_SECONDS:
+        logger.debug("[GURS] Uporabljam cache WMS slojev (%d slojev, starost %.0fs).", len(cached_layers), cached_age)
+        return cached_layers, "cache"
+
+    target_wms_url = GURS_WMS_URL
+    try:
+        async with httpx.AsyncClient(timeout=GURS_API_TIMEOUT) as client:
+            logger.debug(f"Zahtevam GetCapabilities z: {target_wms_url}")
+            response = await client.get(
+                target_wms_url,
+                params={"service": "WMS", "request": "GetCapabilities", "version": "1.3.0"},
+            )
+            response.raise_for_status()
+            logger.debug(f"GetCapabilities OK: {response.status_code}")
+            layers = _parse_wms_capabilities(response.text)
+            if layers:
+                WMS_CAPABILITIES_CACHE["layers"] = layers
+                WMS_CAPABILITIES_CACHE["fetched_at"] = now
+                logger.info(f"[GURS] Naloženih {len(layers)} WMS slojev (osveženo).")
+                return layers, "remote"
+            logger.warning("[GURS] GetCapabilities vrnil brez slojev.")
+    except Exception as exc:
+        logger.warning(f"[GURS] GetCapabilities ni uspel ({target_wms_url}): {exc}")
+
+    if cached_layers:
+        logger.debug("[GURS] Uporabljam prejšnji cache (%d slojev).", len(cached_layers))
+        return cached_layers, "cache"
+
+    return [], "error"
+
+
+def _select_layer_metadata(
+    layer_id: str,
+    layer_cfg: Dict[str, Any],
+    available_layers: Sequence[Dict[str, Any]] | None,
+    available_lookup: Dict[str, Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    if available_lookup is None:
+        available_lookup = {}
+
+    candidates: List[str] = []
+    name_explicit = layer_cfg.get("name")
+    if name_explicit:
+        candidates.append(name_explicit)
+    candidates.extend(layer_cfg.get("name_candidates", []))
+
+    for candidate in candidates:
+        if candidate and candidate in available_lookup:
+            return available_lookup[candidate]
+
+    if available_layers:
+        keywords = [kw.lower() for kw in layer_cfg.get("title_keywords", []) if isinstance(kw, str)]
+        if keywords:
+            for layer in available_layers:
+                combined = f"{layer.get('title', '')} {layer.get('name', '')}".lower()
+                if all(keyword in combined for keyword in keywords):
+                    logger.debug(
+                        "[GURS] Sloj '%s' ujemanje po ključnih besedah -> %s",
+                        layer_id,
+                        layer.get("name"),
+                    )
+                    return layer
+
+        pattern = layer_cfg.get("name_regex")
+        if pattern:
+            try:
+                compiled = re.compile(pattern)
+            except re.error as exc:
+                logger.warning(
+                    "[GURS] Neveljaven regex '%s' za sloj '%s': %s",
+                    pattern,
+                    layer_id,
+                    exc,
+                )
+            else:
+                for layer in available_layers:
+                    if compiled.search(layer.get("name", "")):
+                        logger.debug(
+                            "[GURS] Sloj '%s' ujemanje po regexu -> %s",
+                            layer_id,
+                            layer.get("name"),
+                        )
+                        return layer
+
+        prefix = layer_cfg.get("name_prefix")
+        if prefix:
+            for layer in available_layers:
+                if layer.get("name", "").startswith(prefix):
+                    logger.debug(
+                        "[GURS] Sloj '%s' ujemanje po prefiksu -> %s",
+                        layer_id,
+                        layer.get("name"),
+                    )
+                    return layer
+
+    fallback_name = name_explicit or (layer_cfg.get("name_candidates") or [None])[0]
+    if fallback_name:
+        return {"name": fallback_name}
+
+    logger.warning(f"[GURS] Sloj '{layer_id}' nima določljivih imen.")
+    return None
+
 def _parse_query_for_parcel(query: str) -> tuple[Optional[str], Optional[str]]:
-    query = query.strip(); parcel_no, ko_hint = None, None; ko_match = re.search(r"k\.?o\.?\s*([\w\s\-]+)", query, re.IGNORECASE)
-    if ko_match: ko_hint = ko_match.group(1).strip(); query_without_ko = query[:ko_match.start()].strip() + query[ko_match.end():].strip()
-    else: query_without_ko = query
-    parcel_match = re.search(r"(\d[\d\s/]*\d|\d+)", query_without_ko)
-    if parcel_match: parcel_no = parcel_match.group(1).replace(" ", "").strip()
-    if parcel_no: parcel_no = re.sub(r'[.,]$', '', parcel_no)
-    logger.debug(f"Parsano iz '{query}': parcela='{parcel_no}', ko='{ko_hint}'"); return parcel_no, ko_hint
+    query = query.strip()
+    if not query:
+        return None, None
+
+    parcel_no: Optional[str] = None
+    ko_hint: Optional[str] = None
+
+    ko_match = re.search(r"k\.?o\.?\s*([\w\s\-]+)", query, re.IGNORECASE)
+    if ko_match:
+        ko_hint = ko_match.group(1).strip()
+        query_without_ko = (query[: ko_match.start()] + " " + query[ko_match.end() :]).strip()
+    else:
+        query_without_ko = query
+
+    numbers = re.findall(r"\d+(?:/\d+)?", query_without_ko)
+
+    if not ko_hint and numbers:
+        first_number = numbers[0]
+        remaining = numbers[1:]
+        if len(first_number) in {3, 4, 5} and "/" not in first_number and remaining:
+            ko_hint = first_number
+            parcel_no = remaining[0]
+        else:
+            parcel_no = first_number
+    elif numbers:
+        parcel_no = numbers[0]
+
+    if not parcel_no and len(numbers) >= 2:
+        parcel_no = numbers[-1]
+
+    if parcel_no:
+        parcel_no = parcel_no.replace(" ", "").strip()
+        parcel_no = re.sub(r"[.,]$", "", parcel_no)
+
+    logger.debug(f"Parsano iz '{query}': parcela='{parcel_no}', ko='{ko_hint}'")
+    return parcel_no, ko_hint
 
 def _extract_ko_id(ko_hint: Optional[str]) -> Optional[int]:
     if not ko_hint:

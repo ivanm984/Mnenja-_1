@@ -22,7 +22,7 @@ let mapConfig = {
 let savedMapState = null;
 let mapStateTimer = null;
 
-const LAYER_ICONS = { ortofoto: '📷', namenska_raba: '🏘️', katastr: '📐', katastr_stevilke: '#️⃣', stavbe: '🏢' };
+const LAYER_ICONS = { ortofoto: '📷', namenska_raba: '🏘️', katastr: '📐', katastr_stevilke: '#️⃣', hisne_stevilke: '🏠', stavbe: '🏢' };
 
 DocumentReady(async () => {
     console.log('🚀 Inicializacija GURS zemljevida v2.5...');
@@ -140,7 +140,7 @@ function createTileLayerFromConfig(cfg) {
             console.log(` -> Base sloj ustvarjen: ${id} (${name}) - Viden: ${visible}`);
         } else {
             overlayLayerMap.set(id, layer);
-            let zIndex = (id === 'namenska_raba') ? 49 : (id === 'katastr') ? 50 : (id === 'katastr_stevilke') ? 51 : (52 + overlayLayerMap.size);
+            let zIndex = (id === 'namenska_raba') ? 49 : (id === 'katastr') ? 50 : (id === 'katastr_stevilke') ? 51 : (id === 'hisne_stevilke') ? 52 : (53 + overlayLayerMap.size);
             layer.setZIndex(zIndex);
             if (always_on) { layer.setVisible(true); }
             console.log(` -> Overlay sloj ustvarjen: ${id} (${name}) - Viden: ${layer.getVisible()}, Z-Index: ${zIndex}`);

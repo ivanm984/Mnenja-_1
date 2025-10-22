@@ -197,7 +197,7 @@ GURS_WMS_LAYERS = {
         "category": "base",
         "default_visible": True
     },
-     "katastr": {
+    "katastr": {
         "name": "SI.GURS.KN:PARCELE",
         "title": "Parcelne meje",
         "description": "Meje parcel iz katastra nepremičnin",
@@ -209,15 +209,19 @@ GURS_WMS_LAYERS = {
         "always_on": True
     },
     "katastr_stevilke": {
-        "name": "SI.GURS.KN:PARCELE", # ✅ POPRAVLJENO: Osnovni sloj za parcele (brez številk)
-        "title": "Parcelne meje",
-        "description": "Meje parcel iz katastra (sloj za številke ni na voljo)",
+        "title": "Parcelne številke",
+        "description": "Prikaz številk parcel iz katastra",
         "url": GURS_WMS_URL,
         "format": "image/png",
         "transparent": True,
         "category": "overlay",
-        "default_visible": False,  # Izklopljeno, ker je že vključeno v "katastr"
-        "always_on": False
+        "default_visible": True,
+        "always_on": False,
+        "name_candidates": [
+            "SI.GURS.KN:PARCELNE_STEVILKE",
+            "SI.GURS.KN:PARCELNE_CENTROID"
+        ],
+        "title_keywords": ["parcel", "številk"]
     },
     "namenska_raba": {
         "name": "RPE:RPE_PO", # ✅ POPRAVLJENO: Uporaba RPE strežnika
@@ -239,6 +243,21 @@ GURS_WMS_LAYERS = {
         "transparent": True,
         "category": "overlay",
         "default_visible": False # Pustimo izklopljeno za zdaj
+    },
+    "hisne_stevilke": {
+        "title": "Hišne številke",
+        "description": "Prikaz hišnih številk",
+        "url": GURS_WMS_URL,
+        "format": "image/png",
+        "transparent": True,
+        "category": "overlay",
+        "default_visible": False,
+        "name_candidates": [
+            "SI.GURS.KN:HS_STEVILKE",
+            "SI.GURS.KN:HISNE_STEVILKE",
+            "SI.GURS.KN:HS"
+        ],
+        "title_keywords": ["hišn", "števil"]
     },
     # --- Ostali sloji zakomentirani ---
     # "dtm": {
