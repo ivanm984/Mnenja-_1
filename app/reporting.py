@@ -198,8 +198,7 @@ def _add_priloga_10a_form(
     p_podpis.add_run("\nDatum: ________________")
     p_podpis.add_run("\n\nŽig in podpis: ________________")
 
-    # Nova stran za podrobno poročilo
-    doc.add_page_break()
+    # Nova sekcija za podrobno poročilo se doda v glavni funkciji
 
 
 def generate_word_report(
@@ -224,11 +223,12 @@ def generate_word_report(
     """
     doc = Document()
 
-    # PRVA STRAN: Obrazec Priloga 10A v pokončni orientaciji
+    # PRVA SEKCIJA: Obrazec Priloga 10A v pokončni orientaciji (portrait - privzeto)
     _add_priloga_10a_form(doc, zahteve, results_map, metadata)
 
-    # PODROBNO POROČILO: Ležeča orientacija za tabele
-    section = doc.sections[0]
+    # DRUGA SEKCIJA: Podrobno poročilo v ležeči orientaciji (landscape)
+    # Dodamo novo sekcijo, kar ustvari section break in novo stran
+    section = doc.add_section()
     section.orientation = WD_ORIENT.LANDSCAPE
     new_width, new_height = section.page_height, section.page_width
     section.page_width = new_width
