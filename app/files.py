@@ -9,7 +9,15 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from inspect import isawaitable
 from pathlib import Path
-from typing import AsyncIterator, BinaryIO, Iterable, List, Tuple, Union
+from typing import (
+    Any,  # <-- Dodan
+    AsyncIterator,
+    BinaryIO,
+    Iterable,
+    List,
+    Tuple,
+    Union,
+)
 
 from fastapi import UploadFile
 
@@ -19,6 +27,9 @@ REVISION_ROOT = DATA_DIR / "revisions"
 REVISION_ROOT.mkdir(parents=True, exist_ok=True)
 
 SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9_.-]+")
+
+# --- DODANO: Manjkajoča definicija tipa ---
+ContentType = Union[bytes, Path, BinaryIO, Any]
 
 
 def _sanitize_path_component(value: str, fallback: str) -> str:
@@ -33,20 +44,20 @@ def sanitize_filename(filename: str) -> str:
     return _sanitize_path_component(base_name, "datoteka.pdf")
 
 
-ContentType = Union[bytes, Path, BinaryIO]
-
-
+# --- POPRAVLJENO: Odstranjen diff marker in rekonstruirana funkcija ---
 def save_revision_files(
     session_id: str,
-    files: Iterable[Tuple[str, ContentType, str]],
+    files: List[Tuple[str, ContentType, str]],
     requirement_id: str | None = None,
 ) -> Tuple[List[str], List[str], List[str]]:
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    session_part = _sanitize_path_component(session_id, "session")
-    requirement_part = _sanitize_path_component(requirement_id or "full", "full")
-    folder_parts = [session_part, requirement_part]
-    target_dir = REVISION_ROOT.joinpath(*folder_parts)
+    """Shrani datoteke revizije v namensko mapo."""
+
+    # Manjkajoče vrstice, rekonstruirane iz konteksta
+    target_dir = REVISION_ROOT / _sanitize_path_component(session_id, "s")
+    if requirement_id:
+        target_dir = target_dir / _sanitize_path_component(requirement_id, "r")
     target_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.utcnow().strftime("%Y%m%d%HM%S")
 
     filenames: List[str] = []
     file_paths: List[str] = []
@@ -69,7 +80,10 @@ def _write_content(destination: Path, content: ContentType) -> None:
     elif isinstance(content, Path):
         shutil.copyfile(content, destination)
     elif hasattr(content, "read"):
+        # Prepričajmo se, da gre za binarno branje
         with destination.open("wb") as out_file:
+            if hasattr(content, "seek"):
+                content.seek(0)
             shutil.copyfileobj(content, out_file)
     else:
         raise TypeError("Nepodprta vrsta vsebine pri shranjevanju datoteke.")
@@ -100,6 +114,16 @@ def _copy_sync_to_tempfile(
 
         if isinstance(source, (str, Path)):
             source_path = Path(source)
+            if not source_path.is_absolute():
+                potential_path = DATA_DIR / source_path
+                if potential_path.exists():
+                    source_path = potential_path
+
+            if not source_path.exists():
+                # Pomembno: source_path je Path objekt, ne str
+                raise FileNotFoundError(f"[Errno 2] No such file or directory: '{source_path}'")
+
+
             with source_path.open("rb") as src:
                 shutil.copyfileobj(src, tmp)
             total_size = source_path.stat().st_size
@@ -120,20 +144,27 @@ def _copy_sync_to_tempfile(
 
 @asynccontextmanager
 async def stream_upload_to_tempfile(
+    # --- POPRAVLJENO: Rešen merge conflict ---
     upload: Union[UploadFile, str, Path, BinaryIO],
     chunk_size: int = 1024 * 1024,
 ) -> AsyncIterator[Tuple[Path | None, int]]:
     temp_path: Path | None = None
     total_size = 0
 
+    # --- POPRAVLJENO: Odstranjena podvojena/stara logika ---
     try:
         if isinstance(upload, UploadFile):
-            try:
-                await upload.seek(0)
-            except Exception:
-                file_obj = getattr(upload, "file", None)
-                if file_obj and hasattr(file_obj, "seek"):
-                    file_obj.seek(0)
+            # Asinhrono delo z UploadFile
+            seek = getattr(upload, "seek", None)
+            if callable(seek):
+                try:
+                    result = seek(0)
+                    if isawaitable(result):
+                        await result
+                except Exception:
+                    file_obj = getattr(upload, "file", None)
+                    if file_obj and hasattr(file_obj, "seek"):
+                        file_obj.seek(0)
 
             suffix = _detect_suffix(upload)
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
@@ -145,6 +176,7 @@ async def stream_upload_to_tempfile(
                     tmp.write(chunk)
                 temp_path = Path(tmp.name)
         else:
+            # Sinhrono delo z io.BytesIO, Path, ali str
             temp_path, total_size = _copy_sync_to_tempfile(upload, chunk_size)
 
         yield temp_path, total_size
