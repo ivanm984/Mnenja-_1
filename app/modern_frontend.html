@@ -73,6 +73,8 @@
         @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
         @keyframes slideIn { from { opacity: 0; transform: translateX(-20px); } to { opacity: 1; transform: translateX(0); } }
         @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes processing-pulse { 0%, 100% { box-shadow: 0 0 30px rgba(99, 102, 241, 0.6), 0 0 60px rgba(99, 102, 241, 0.3); } 50% { box-shadow: 0 0 40px rgba(99, 102, 241, 0.8), 0 0 80px rgba(99, 102, 241, 0.5); } }
+        @keyframes processing-spin { 0% { transform: scale(1) rotate(0deg); } 50% { transform: scale(1.08) rotate(180deg); } 100% { transform: scale(1) rotate(360deg); } }
         @keyframes progressShimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
         
         .hidden { display: none !important; }
@@ -122,6 +124,9 @@
         .step.active .step-circle { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%); border-color: var(--primary); color: white; box-shadow: 0 0 30px rgba(99, 102, 241, 0.5); animation: pulse 2s ease-in-out infinite; }
         .step.completed .step-circle { background: linear-gradient(135deg, var(--success) 0%, #059669 100%); border-color: var(--success); color: white; }
         .step.completed .step-circle::after { content: '✓'; font-size: 1.5rem; }
+        .step-circle.processing { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%); border: 3px solid var(--primary); color: white; box-shadow: 0 0 30px rgba(99, 102, 241, 0.6), 0 0 60px rgba(99, 102, 241, 0.3); animation: processing-pulse 1.5s ease-in-out infinite, processing-spin 3s linear infinite; position: relative; }
+        .step-circle.processing::before { content: ''; position: absolute; top: -3px; left: -3px; right: -3px; bottom: -3px; border-radius: 50%; border: 3px solid transparent; border-top-color: var(--primary-light); border-right-color: var(--primary-light); animation: spin 1s linear infinite; }
+        .step-circle.processing::after { content: '⚡'; font-size: 1.5rem; animation: pulse 0.8s ease-in-out infinite; }
         .step-label { font-weight: 600; color: var(--text-muted); transition: color 0.3s ease; }
         .step.active .step-label, .step.completed .step-label { color: var(--text); }
         
@@ -2230,12 +2235,21 @@
             },
 
             showLoading(message) {
+                // Ne prikazuj overlay-ja z blur efektom, ampak dodaj processing indikator na Step 2
+                const step2Circle = document.querySelector('#step-2 .step-circle');
+                if (step2Circle) {
+                    step2Circle.classList.add('processing');
+                }
+                // Loading message lahko še vedno shranimo (za debugging ali future use)
                 document.getElementById('loading-message').textContent = message;
-                document.getElementById('loading-overlay').classList.remove('hidden');
             },
 
             hideLoading() {
-                document.getElementById('loading-overlay').classList.add('hidden');
+                // Odstrani processing indikator iz Step 2
+                const step2Circle = document.querySelector('#step-2 .step-circle');
+                if (step2Circle) {
+                    step2Circle.classList.remove('processing');
+                }
             },
 
             showToast(type, title, message) {
