@@ -7,6 +7,7 @@ import shutil
 import tempfile
 from contextlib import asynccontextmanager
 from datetime import datetime
+from inspect import isawaitable
 from pathlib import Path
 from typing import AsyncIterator, BinaryIO, Iterable, List, Tuple, Union
 
@@ -74,29 +75,89 @@ def _write_content(destination: Path, content: ContentType) -> None:
         raise TypeError("Nepodprta vrsta vsebine pri shranjevanju datoteke.")
 
 
+def _detect_suffix(candidate: object) -> str:
+    """Extract a meaningful suffix for temporary files."""
+
+    if isinstance(candidate, (str, Path)):
+        return Path(candidate).suffix
+
+    for attr in ("filename", "name"):
+        value = getattr(candidate, attr, None)
+        if isinstance(value, str):
+            return Path(value).suffix
+
+    return ""
+
+
+def _copy_sync_to_tempfile(
+    source: Union[str, Path, BinaryIO], chunk_size: int
+) -> Tuple[Path, int]:
+    suffix = _detect_suffix(source)
+    total_size = 0
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        temp_path = Path(tmp.name)
+
+        if isinstance(source, (str, Path)):
+            source_path = Path(source)
+            if not source_path.is_absolute():
+                potential_path = DATA_DIR / source_path
+                if potential_path.exists():
+                    source_path = potential_path
+
+            if not source_path.exists():
+                raise FileNotFoundError(source_path)
+
+            with source_path.open("rb") as src:
+                shutil.copyfileobj(src, tmp)
+            total_size = source_path.stat().st_size
+        else:
+            file_obj = source
+            if hasattr(file_obj, "seek"):
+                file_obj.seek(0)
+
+            while True:
+                chunk = file_obj.read(chunk_size)
+                if not chunk:
+                    break
+                tmp.write(chunk)
+                total_size += len(chunk)
+
+    return temp_path, total_size
+
+
 @asynccontextmanager
 async def stream_upload_to_tempfile(
-    upload: UploadFile, chunk_size: int = 1024 * 1024
+    upload: Union[UploadFile, str, Path, BinaryIO],
+    chunk_size: int = 1024 * 1024,
 ) -> AsyncIterator[Tuple[Path | None, int]]:
     temp_path: Path | None = None
     total_size = 0
 
     try:
-        try:
-            await upload.seek(0)
-        except Exception:
-            if upload.file and hasattr(upload.file, "seek"):
-                upload.file.seek(0)
+        if isinstance(upload, UploadFile):
+            seek = getattr(upload, "seek", None)
+            if callable(seek):
+                try:
+                    result = seek(0)
+                    if isawaitable(result):
+                        await result
+                except Exception:
+                    file_obj = getattr(upload, "file", None)
+                    if file_obj and hasattr(file_obj, "seek"):
+                        file_obj.seek(0)
 
-        suffix = Path(upload.filename or "").suffix
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            while True:
-                chunk = await upload.read(chunk_size)
-                if not chunk:
-                    break
-                total_size += len(chunk)
-                tmp.write(chunk)
-            temp_path = Path(tmp.name)
+            suffix = _detect_suffix(upload)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                while True:
+                    chunk = await upload.read(chunk_size)
+                    if not chunk:
+                        break
+                    total_size += len(chunk)
+                    tmp.write(chunk)
+                temp_path = Path(tmp.name)
+        else:
+            temp_path, total_size = _copy_sync_to_tempfile(upload, chunk_size)
 
         yield temp_path, total_size
     finally:
