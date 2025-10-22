@@ -172,6 +172,34 @@
         
         .spinner-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: center; z-index: 1000; }
         .spinner { width: 60px; height: 60px; border: 4px solid rgba(99, 102, 241, 0.2); border-top-color: var(--primary); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 1.5rem; }
+
+        .analysis-status-description { color: var(--text-muted); margin-bottom: 1.5rem; font-size: 0.95rem; }
+        .analysis-status-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 24px; padding: 2rem; display: flex; flex-direction: column; gap: 1.5rem; box-shadow: 0 20px 40px -20px rgb(15 23 42 / 0.45); }
+        .analysis-status-header { display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
+        .analysis-status-spinner { width: 56px; height: 56px; border-radius: 50%; border: 4px solid rgba(99, 102, 241, 0.25); border-top-color: var(--primary); animation: spin 1s linear infinite; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 1.35rem; color: var(--primary); }
+        .analysis-status-spinner.completed { animation: none; border-color: rgba(16, 185, 129, 0.25); border-top-color: var(--success); color: var(--success); }
+        .analysis-status-spinner.completed::after { content: '✓'; }
+        .analysis-status-spinner.error { animation: none; border-color: rgba(239, 68, 68, 0.25); border-top-color: var(--danger); color: var(--danger); }
+        .analysis-status-spinner.error::after { content: '⚠'; }
+        .analysis-status-title { font-size: 1.3rem; font-weight: 700; color: var(--text); }
+        .analysis-status-message { color: var(--text-muted); font-size: 0.95rem; margin-top: 0.25rem; }
+        .analysis-status-progress { display: flex; align-items: center; gap: 1rem; }
+        .analysis-progress-bar { flex: 1; height: 8px; background: var(--input-bg); border-radius: 4px; overflow: hidden; position: relative; }
+        .analysis-progress-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--primary), var(--primary-light)); border-radius: 4px; transition: width 0.3s ease; }
+        .analysis-progress-percentage { font-weight: 700; font-size: 0.95rem; min-width: 45px; text-align: right; color: var(--text); }
+        .analysis-status-history { display: flex; flex-direction: column; gap: 1rem; }
+        .analysis-status-subtitle { font-weight: 600; color: var(--text); font-size: 1rem; }
+        .analysis-status-log { list-style: none; display: none; flex-direction: column; gap: 0.75rem; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; }
+        .analysis-status-log-item { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; padding: 0.85rem 1rem; border-radius: 14px; border: 1px solid var(--border); background: var(--bg-card); }
+        .analysis-status-log-message { flex: 1; font-size: 0.9rem; color: var(--text); line-height: 1.4; }
+        .analysis-status-log-time { font-size: 0.8rem; color: var(--text-muted); white-space: nowrap; }
+        .analysis-status-empty { border: 1px dashed var(--border); border-radius: 12px; padding: 1rem; text-align: center; color: var(--text-muted); font-size: 0.9rem; }
+
+        @media (max-width: 768px) {
+            .analysis-status-card { padding: 1.5rem; }
+            .analysis-status-spinner { width: 48px; height: 48px; }
+            .analysis-status-header { gap: 1rem; }
+        }
         
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
         .stat-card { padding: 1.5rem; border-radius: 16px; border: 1px solid; cursor: pointer; transition: all 0.3s ease; }
@@ -413,8 +441,34 @@
                 </div>
             </div>
 
-            <!-- Step 3: Analysis (prazno, samo loading) -->
-            <div id="content-step-3" class="hidden"></div>
+            <!-- Step 3: Analysis progress -->
+            <div id="content-step-3" class="hidden">
+                <h2 class="section-title">🔄 Analiza v teku</h2>
+                <p class="analysis-status-description">Napredna AI analiza pregleda vse izbrane pogoje in sproti posodablja napredek. Stran ostane aktivna, zato lahko spremljate ključne korake brez prekinitev.</p>
+
+                <div class="analysis-status-card">
+                    <div class="analysis-status-header">
+                        <div class="analysis-status-spinner" id="analysis-status-spinner"></div>
+                        <div>
+                            <div class="analysis-status-title" id="analysis-status-title">Analiza ni zagnana</div>
+                            <div class="analysis-status-message" id="analysis-status-message">Dokončajte pripravo podatkov in zaženite postopek.</div>
+                        </div>
+                    </div>
+
+                    <div class="analysis-status-progress">
+                        <div class="analysis-progress-bar">
+                            <div class="analysis-progress-fill" id="analysis-progress-fill" style="width: 0%;"></div>
+                        </div>
+                        <div class="analysis-progress-percentage" id="analysis-progress-percentage">0%</div>
+                    </div>
+
+                    <div class="analysis-status-history">
+                        <div class="analysis-status-subtitle">Zgodovina korakov</div>
+                        <ul class="analysis-status-log" id="analysis-status-log"></ul>
+                        <div class="analysis-status-empty" id="analysis-status-empty">Čakam na prve podatke o poteku analize.</div>
+                    </div>
+                </div>
+            </div>
 
             <!-- Step 4: Results -->
             <div id="content-step-4" class="hidden">
@@ -584,6 +638,9 @@
         // Progress tracking state
         progressInterval: null,
         currentProgress: null,
+        progressContext: null,
+        analysisStatusLog: [],
+        lastProgressMessage: null,
 
         // ⭐ DODAJ TO FUNKCIJO TUKAJ ⭐
         openGursMap() {
@@ -1163,7 +1220,7 @@
                     console.log('[Upload] Prejet session ID:', this.sessionId);
 
                     // Start progress polling with actual session ID
-                    this.startProgressPolling(this.sessionId);
+                    this.startProgressPolling(this.sessionId, 'extract');
                     this.hideLoading();
 
                     // Polling za rezultate
@@ -1308,6 +1365,12 @@
                 this.currentStep = 3;
                 this.updateUI();
 
+                this.resetAnalysisStatus('Pripravljam AI analizo', 'Pošiljam podatke na strežnik...');
+                this.setAnalysisStatus('Pripravljam AI analizo', 'Pošiljam podatke na strežnik...', 5);
+                this.appendAnalysisLog('Pošiljam podatke na strežnik...');
+                this.lastProgressMessage = 'Pošiljam podatke na strežnik...';
+                this.showProgress('AI analiza', 'Pošiljam podatke na strežnik...', 5);
+
                 try {
                     const payload = {
                         session_id: this.sessionId,
@@ -1329,8 +1392,13 @@
                     const initData = await response.json();
                     console.log('[Analyze] Analiza se začne, session ID:', initData.session_id);
 
+                    this.appendAnalysisLog('Analiza je bila uspešno zagnana.');
+                    this.lastProgressMessage = 'Analiza je bila uspešno zagnana.';
+                    this.setAnalysisStatus('Analiza v teku', 'Analiza je zagnana. Čakam na posodobitve strežnika...', 10);
+                    this.updateProgress('AI analiza', 'Analiza je zagnana. Čakam na posodobitve strežnika...', 10);
+
                     // Start progress polling
-                    this.startProgressPolling(this.sessionId);
+                    this.startProgressPolling(this.sessionId, 'analysis');
 
                     // Polling za rezultate analize
                     const resultData = await this.pollForAnalyzeResult(this.sessionId);
@@ -1360,6 +1428,12 @@
                     this.stopProgressPolling();
                     this.updateStepAccess();
 
+                    this.setAnalysisStatus('Analiza zaključena', 'Rezultati so pripravljeni za pregled.', 100);
+                    this.setAnalysisSpinnerState('completed');
+                    this.appendAnalysisLog('Analiza zaključena. Rezultati so pripravljeni.');
+                    this.lastProgressMessage = 'Analiza zaključena. Rezultati so pripravljeni.';
+                    this.updateProgress('AI analiza', 'Analiza zaključena. Rezultati so pripravljeni.', 100);
+
                     const compliantCount = this.results.filter(r => r.compliant).length;
                     const nonCompliantCount = this.results.filter(r => !r.compliant && !r.notRelevant).length;
                     const notRelevantCount = this.results.filter(r => r.notRelevant).length;
@@ -1370,6 +1444,11 @@
                     console.error('[Analyze] Napaka:', error);
                     this.stopProgressPolling();
                     this.hideLoading();
+                    this.setAnalysisStatus('Analiza neuspešna', error.message || 'Napaka pri analizi.', this.currentProgress?.percentage ?? 0);
+                    this.setAnalysisSpinnerState('error');
+                    this.appendAnalysisLog(`Napaka: ${error.message || 'Neznana napaka'}`);
+                    this.lastProgressMessage = error.message || 'Napaka';
+                    this.hideProgressBar();
                     this.showToast('error', 'Napaka pri analizi', error.message);
                     this.currentStep = 2;
                     this.updateUI();
@@ -1549,6 +1628,9 @@
                 this.eupRabaPairs = [];
                 this.keyData = {};
                 this.expandedRows.clear();
+                this.resetAnalysisStatus('Analiza ni zagnana', 'Dokončajte pripravo podatkov in zaženite postopek.');
+                this.hideProgressBar();
+                this.hideProgress();
                 document.getElementById('file-input').value = '';
                 this.renderFileList();
                 this.updateStepAccess();
@@ -1810,6 +1892,123 @@
                 });
             },
 
+            resetAnalysisStatus(title = 'Analiza v teku', message = 'Pripravljam sistem za analizo...') {
+                this.analysisStatusLog = [];
+                this.lastProgressMessage = null;
+
+                const logEl = document.getElementById('analysis-status-log');
+                const emptyEl = document.getElementById('analysis-status-empty');
+
+                if (logEl) {
+                    logEl.innerHTML = '';
+                    logEl.style.display = 'none';
+                }
+                if (emptyEl) {
+                    emptyEl.style.display = 'block';
+                }
+
+                this.setAnalysisSpinnerState('active');
+                this.setAnalysisStatus(title, message, 0);
+            },
+
+            setAnalysisStatus(title, message, percentage = null) {
+                const titleEl = document.getElementById('analysis-status-title');
+                const messageEl = document.getElementById('analysis-status-message');
+                const fillEl = document.getElementById('analysis-progress-fill');
+                const percentageEl = document.getElementById('analysis-progress-percentage');
+
+                if (titleEl && title) titleEl.textContent = title;
+                if (messageEl && message) messageEl.textContent = message;
+
+                if (typeof percentage === 'number' && !Number.isNaN(percentage)) {
+                    const clamped = Math.max(0, Math.min(100, Math.round(percentage)));
+                    if (fillEl) fillEl.style.width = `${clamped}%`;
+                    if (percentageEl) percentageEl.textContent = `${clamped}%`;
+                }
+            },
+
+            setAnalysisSpinnerState(state = 'active') {
+                const spinner = document.getElementById('analysis-status-spinner');
+                if (!spinner) return;
+
+                spinner.classList.remove('completed', 'error');
+                if (state === 'completed') {
+                    spinner.classList.add('completed');
+                } else if (state === 'error') {
+                    spinner.classList.add('error');
+                }
+            },
+
+            appendAnalysisLog(message) {
+                if (!message) return;
+
+                const timestamp = new Date().toLocaleTimeString('sl-SI', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                });
+
+                this.analysisStatusLog.unshift({ message, timestamp });
+                if (this.analysisStatusLog.length > 8) {
+                    this.analysisStatusLog.pop();
+                }
+
+                this.refreshAnalysisLogUI();
+            },
+
+            refreshAnalysisLogUI() {
+                const listEl = document.getElementById('analysis-status-log');
+                const emptyEl = document.getElementById('analysis-status-empty');
+                if (!listEl) return;
+
+                listEl.innerHTML = '';
+
+                if (this.analysisStatusLog.length === 0) {
+                    listEl.style.display = 'none';
+                    if (emptyEl) emptyEl.style.display = 'block';
+                    return;
+                }
+
+                listEl.style.display = 'flex';
+                if (emptyEl) emptyEl.style.display = 'none';
+
+                this.analysisStatusLog.forEach(entry => {
+                    const li = document.createElement('li');
+                    li.className = 'analysis-status-log-item';
+
+                    const messageSpan = document.createElement('span');
+                    messageSpan.className = 'analysis-status-log-message';
+                    messageSpan.textContent = entry.message;
+
+                    const timeSpan = document.createElement('span');
+                    timeSpan.className = 'analysis-status-log-time';
+                    timeSpan.textContent = entry.timestamp;
+
+                    li.appendChild(messageSpan);
+                    li.appendChild(timeSpan);
+                    listEl.appendChild(li);
+                });
+            },
+
+            handleAnalysisProgress(progressData) {
+                const { step, total_steps, message, percentage, completed } = progressData;
+                const title = step && total_steps ? `Korak ${step}/${total_steps}` : 'Analiza v teku';
+                const resolvedPercentage = typeof percentage === 'number'
+                    ? percentage
+                    : (completed ? 100 : (this.currentProgress?.percentage ?? 0));
+
+                this.setAnalysisStatus(title, message || 'Procesiranje v teku...', resolvedPercentage);
+
+                if (message && message !== this.lastProgressMessage) {
+                    this.appendAnalysisLog(message);
+                    this.lastProgressMessage = message;
+                }
+
+                if (completed || resolvedPercentage >= 100) {
+                    this.setAnalysisSpinnerState('completed');
+                }
+            },
+
             showProgress(title, message, percentage) {
                 const progressBar = document.getElementById('progress-bar');
                 if (!progressBar) return;
@@ -1872,10 +2071,12 @@
             },
 
             // Progress tracking methods
-            startProgressPolling(sessionId) {
+            startProgressPolling(sessionId, context = 'analysis') {
                 this.stopProgressPolling(); // Stop any existing polling
+                this.progressContext = context;
+
                 this.showProgressBar();
-                console.log('[Progress] Started polling for session:', sessionId);
+                console.log(`[Progress] Started polling for session: ${sessionId} (context: ${context})`);
 
                 this.progressInterval = setInterval(async () => {
                     try {
@@ -1908,6 +2109,8 @@
                     console.log('[Progress] Stopped polling');
                 }
 
+                this.progressContext = null;
+
                 // Hide progress bar after a short delay to show completion
                 setTimeout(() => {
                     console.log('[Progress] Hiding progress bar');
@@ -1928,6 +2131,10 @@
                 if (messageEl) messageEl.textContent = message || 'Procesiranje...';
                 if (fillEl) fillEl.style.width = `${percentage || 0}%`;
                 if (percentageEl) percentageEl.textContent = `${percentage || 0}%`;
+
+                if (this.progressContext === 'analysis') {
+                    this.handleAnalysisProgress(progressData);
+                }
             },
 
             showProgressBar() {

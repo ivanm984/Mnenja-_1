@@ -223,6 +223,17 @@ def generate_word_report(
     """
     doc = Document()
 
+    # Zagotovimo, da je prvi odsek (Priloga 10A) v pokončni (portrait) orientaciji
+    first_section = doc.sections[0]
+    first_section.orientation = WD_ORIENT.PORTRAIT
+    first_section.page_width = Inches(8.27)
+    first_section.page_height = Inches(11.69)
+    portrait_margin = Inches(1)
+    first_section.top_margin = portrait_margin
+    first_section.bottom_margin = portrait_margin
+    first_section.left_margin = portrait_margin
+    first_section.right_margin = portrait_margin
+
     # PRVA SEKCIJA: Obrazec Priloga 10A v pokončni orientaciji (portrait - privzeto)
     _add_priloga_10a_form(doc, zahteve, results_map, metadata)
 
