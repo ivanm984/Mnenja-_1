@@ -7,6 +7,7 @@ import shutil
 import tempfile
 from contextlib import asynccontextmanager
 from datetime import datetime
+from inspect import isawaitable
 from pathlib import Path
 from typing import AsyncIterator, BinaryIO, Iterable, List, Tuple, Union
 
