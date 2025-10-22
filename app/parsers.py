@@ -61,6 +61,8 @@ def convert_pdf_pages_to_images(pdf_bytes: bytes, pages_to_render_str: Optional[
                 pix = page.get_pixmap(dpi=200)
                 img_bytes = pix.tobytes("png")
                 img = Image.open(io.BytesIO(img_bytes))
+                # POMEMBNO: Naloži sliko v pomnilnik TAKOJ, preden se BytesIO zapre
+                img.load()
                 images.append(img)
         doc.close()
     except Exception as exc:  # pragma: no cover - depends on PDFs
