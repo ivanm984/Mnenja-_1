@@ -48,6 +48,11 @@ static_path = PROJECT_ROOT / "static"
 if static_path.exists():
     app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 
+# Mount reports directory za download generiranih poročil
+reports_path = PROJECT_ROOT / "reports"
+reports_path.mkdir(exist_ok=True)  # Ustvari direktorij če ne obstaja
+app.mount("/reports", StaticFiles(directory=str(reports_path)), name="reports")
+
 @app.on_event("startup")
 async def startup_event():
     """Inicializacija ob zagonu aplikacije."""
