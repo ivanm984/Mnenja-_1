@@ -1,10 +1,16 @@
 """File-system helpers for storing uploaded revisions."""
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import tempfile
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, List, Tuple
+from typing import AsyncIterator, BinaryIO, Iterable, List, Tuple, Union
+
+from fastapi import UploadFile
 
 from .config import DATA_DIR
 
@@ -14,20 +20,30 @@ REVISION_ROOT.mkdir(parents=True, exist_ok=True)
 SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9_.-]+")
 
 
+def _sanitize_path_component(value: str, fallback: str) -> str:
+    cleaned = SAFE_NAME_RE.sub("_", value)
+    return cleaned.strip("._")[:255] or fallback
+
+
 def sanitize_filename(filename: str) -> str:
     if not filename:
         return "datoteka.pdf"
-    name = SAFE_NAME_RE.sub("_", filename)
-    return name.strip("._") or "datoteka.pdf"
+    base_name = os.path.basename(filename)
+    return _sanitize_path_component(base_name, "datoteka.pdf")
+
+
+ContentType = Union[bytes, Path, BinaryIO]
 
 
 def save_revision_files(
     session_id: str,
-    files: Iterable[Tuple[str, bytes, str]],
+    files: Iterable[Tuple[str, ContentType, str]],
     requirement_id: str | None = None,
 ) -> Tuple[List[str], List[str], List[str]]:
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    folder_parts = [session_id, requirement_id or "full"]
+    session_part = _sanitize_path_component(session_id, "session")
+    requirement_part = _sanitize_path_component(requirement_id or "full", "full")
+    folder_parts = [session_part, requirement_part]
     target_dir = REVISION_ROOT.joinpath(*folder_parts)
     target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -39,11 +55,56 @@ def save_revision_files(
         safe_name = sanitize_filename(original_name)
         stored_name = f"{timestamp}_{safe_name}"
         destination = target_dir / stored_name
-        destination.write_bytes(content)
+        _write_content(destination, content)
         filenames.append(original_name or safe_name)
         file_paths.append(str(destination.relative_to(DATA_DIR)))
         mime_types.append(mime or "application/octet-stream")
     return filenames, file_paths, mime_types
 
 
-__all__ = ["save_revision_files"]
+def _write_content(destination: Path, content: ContentType) -> None:
+    if isinstance(content, bytes):
+        destination.write_bytes(content)
+    elif isinstance(content, Path):
+        shutil.copyfile(content, destination)
+    elif hasattr(content, "read"):
+        with destination.open("wb") as out_file:
+            shutil.copyfileobj(content, out_file)
+    else:
+        raise TypeError("Nepodprta vrsta vsebine pri shranjevanju datoteke.")
+
+
+@asynccontextmanager
+async def stream_upload_to_tempfile(
+    upload: UploadFile, chunk_size: int = 1024 * 1024
+) -> AsyncIterator[Tuple[Path | None, int]]:
+    temp_path: Path | None = None
+    total_size = 0
+
+    try:
+        try:
+            await upload.seek(0)
+        except Exception:
+            if upload.file and hasattr(upload.file, "seek"):
+                upload.file.seek(0)
+
+        suffix = Path(upload.filename or "").suffix
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            while True:
+                chunk = await upload.read(chunk_size)
+                if not chunk:
+                    break
+                total_size += len(chunk)
+                tmp.write(chunk)
+            temp_path = Path(tmp.name)
+
+        yield temp_path, total_size
+    finally:
+        if temp_path and temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+
+
+__all__ = ["sanitize_filename", "save_revision_files", "stream_upload_to_tempfile"]
