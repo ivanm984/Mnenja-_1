@@ -1858,22 +1858,28 @@
             startProgressPolling(sessionId) {
                 this.stopProgressPolling(); // Stop any existing polling
                 this.showProgressBar();
+                console.log('[Progress] Started polling for session:', sessionId);
 
                 this.progressInterval = setInterval(async () => {
                     try {
                         const response = await fetch(`/progress/${sessionId}`);
-                        if (!response.ok) return;
+                        if (!response.ok) {
+                            console.warn('[Progress] Failed to fetch progress, status:', response.status);
+                            return;
+                        }
 
                         const progressData = await response.json();
+                        console.log('[Progress] Received data:', progressData);
                         this.currentProgress = progressData;
                         this.updateProgressBar(progressData);
 
                         // Stop polling when completed
                         if (progressData.completed) {
+                            console.log('[Progress] Completed, stopping polling');
                             this.stopProgressPolling();
                         }
                     } catch (error) {
-                        console.error('Progress polling error:', error);
+                        console.error('[Progress] Polling error:', error);
                     }
                 }, 800); // Poll every 800ms
             },
@@ -1882,16 +1888,19 @@
                 if (this.progressInterval) {
                     clearInterval(this.progressInterval);
                     this.progressInterval = null;
+                    console.log('[Progress] Stopped polling');
                 }
 
-                // Hide progress bar after a short delay
+                // Hide progress bar after a short delay to show completion
                 setTimeout(() => {
+                    console.log('[Progress] Hiding progress bar');
                     this.hideProgressBar();
-                }, 1000);
+                }, 2000);
             },
 
             updateProgressBar(progressData) {
                 const { step, total_steps, message, percentage } = progressData;
+                console.log('[Progress] Updating bar:', { step, total_steps, message, percentage });
 
                 const titleEl = document.querySelector('.progress-bar-title');
                 const messageEl = document.querySelector('.progress-bar-message');
@@ -1908,6 +1917,9 @@
                 const progressBar = document.querySelector('.progress-bar-container');
                 if (progressBar) {
                     progressBar.classList.add('active');
+                    console.log('[Progress] Progress bar shown, classes:', progressBar.className);
+                } else {
+                    console.error('[Progress] Progress bar container not found!');
                 }
             },
 
@@ -1915,6 +1927,9 @@
                 const progressBar = document.querySelector('.progress-bar-container');
                 if (progressBar) {
                     progressBar.classList.remove('active');
+                    console.log('[Progress] Progress bar hidden');
+                } else {
+                    console.error('[Progress] Progress bar container not found!');
                 }
             },
 

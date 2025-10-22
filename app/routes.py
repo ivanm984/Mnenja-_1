@@ -104,7 +104,9 @@ async def get_progress(session_id: str):
     """
     progress = await cache_manager.retrieve_session_data(f"progress:{session_id}")
     if not progress:
+        logger.debug(f"[{session_id}] Progress podatki ne obstajajo, vračam privzete")
         return {"step": 0, "total_steps": 4, "message": "Inicializacija...", "percentage": 0}
+    logger.debug(f"[{session_id}] Progress podatki: {progress}")
     return progress
 
 @router.post("/save-session")
@@ -183,12 +185,14 @@ async def extract_data(
     logger.info(f"[{session_id}] Začetek /extract-data z {len(pdf_files)} datotekami")
 
     # Shrani progress v cache za frontend polling
-    await cache_manager.store_session_data(f"progress:{session_id}", {
+    progress_data = {
         "step": 1,
         "total_steps": 4,
         "message": "Procesiranje PDF datotek...",
         "percentage": 0
-    })
+    }
+    await cache_manager.store_session_data(f"progress:{session_id}", progress_data)
+    logger.info(f"[{session_id}] Progress posodobljen: {progress_data}")
 
     # Parsiranje metapodatkov
     page_overrides = _parse_files_metadata(files_meta_json)
@@ -312,12 +316,14 @@ async def analyze_report(
     logger.info(f"[{session_id}] Začetek /analyze-report")
 
     # Initialize progress
-    await cache_manager.store_session_data(f"progress:{session_id}", {
+    progress_data = {
         "step": 1,
         "total_steps": 5,
         "message": "Inicializacija analize skladnosti...",
         "percentage": 0
-    })
+    }
+    await cache_manager.store_session_data(f"progress:{session_id}", progress_data)
+    logger.info(f"[{session_id}] Progress posodobljen: {progress_data}")
 
     data = await cache_manager.retrieve_session_data(session_id)
     if not data:
@@ -446,13 +452,15 @@ async def analyze_report(
     }
     await cache_manager.store_session_data(f"report:{session_id}", final_report_data)
 
-    await cache_manager.store_session_data(f"progress:{session_id}", {
+    final_progress_data = {
         "step": 5,
         "total_steps": 5,
         "message": "Analiza končana!",
         "percentage": 100,
         "completed": True
-    })
+    }
+    await cache_manager.store_session_data(f"progress:{session_id}", final_progress_data)
+    logger.info(f"[{session_id}] Progress končan: {final_progress_data}")
 
     total_duration = time.perf_counter() - start_time
     logger.info(f"[{session_id}] Proces končan v {total_duration:.2f}s")
