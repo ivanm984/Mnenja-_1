@@ -8,7 +8,9 @@ from typing import Optional
 from fastapi import Header, HTTPException, Request
 from fastapi.security import APIKeyHeader
 
-from .config import DEBUG, VALID_API_KEYS
+from secrets import compare_digest
+
+from .config import DEBUG, VALID_API_KEY_HASHES, hash_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +44,8 @@ async def verify_api_key(x_api_key: Optional[str] = Header(None)) -> str:
             headers={"WWW-Authenticate": "ApiKey"},
         )
 
-    if x_api_key not in VALID_API_KEYS:
+    api_key_hash = hash_api_key(x_api_key)
+    if not any(compare_digest(api_key_hash, stored) for stored in VALID_API_KEY_HASHES):
         logger.warning(f"Neveljaven API ključ: {x_api_key[:8]}...")
         raise HTTPException(
             status_code=401,

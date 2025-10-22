@@ -2,15 +2,30 @@
 from __future__ import annotations
 
 import io
-from typing import List, Optional
+from pathlib import Path
+from typing import BinaryIO, List, Optional, Union
 
 from fastapi import HTTPException
 from pypdf import PdfReader
 
 
-def parse_pdf(file_bytes: bytes) -> str:
+PDFInput = Union[str, Path, bytes, BinaryIO]
+
+
+def parse_pdf(source: PDFInput) -> str:
     try:
-        pdf = PdfReader(io.BytesIO(file_bytes))
+        if isinstance(source, (str, Path)):
+            pdf = PdfReader(str(source))
+        elif isinstance(source, bytes):
+            pdf = PdfReader(io.BytesIO(source))
+        else:
+            if hasattr(source, "seek") and hasattr(source, "tell"):
+                position = source.tell()
+                source.seek(0)
+                pdf = PdfReader(source)
+                source.seek(position)
+            else:
+                pdf = PdfReader(source)
         text = "".join(page.extract_text() or "" for page in pdf.pages)
         return text.strip()
     except Exception as exc:  # pragma: no cover - depends on PDFs
@@ -42,7 +57,9 @@ def parse_page_string(page_str: str) -> List[int]:
     return sorted(list(pages))
 
 
-def convert_pdf_pages_to_images(pdf_bytes: bytes, pages_to_render_str: Optional[str]):
+def convert_pdf_pages_to_images(
+    pdf_source: PDFInput, pages_to_render_str: Optional[str]
+):
     import fitz  # type: ignore
     from PIL import Image
 
@@ -54,7 +71,19 @@ def convert_pdf_pages_to_images(pdf_bytes: bytes, pages_to_render_str: Optional[
         return images
 
     try:
-        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        if isinstance(pdf_source, (str, Path)):
+            doc = fitz.open(str(pdf_source))
+        elif isinstance(pdf_source, bytes):
+            doc = fitz.open(stream=pdf_source, filetype="pdf")
+        else:
+            # File-like objekt
+            position = None
+            if hasattr(pdf_source, "tell"):
+                position = pdf_source.tell()
+            data = pdf_source.read()
+            if position is not None and hasattr(pdf_source, "seek"):
+                pdf_source.seek(position)
+            doc = fitz.open(stream=data, filetype="pdf")
         for page_num in page_numbers:
             if 0 <= page_num < len(doc):
                 page = doc.load_page(page_num)

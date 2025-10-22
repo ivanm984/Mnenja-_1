@@ -2,8 +2,10 @@
 # PONOVNA VERZIJA (Onemogočeni problematični WMS sloji, preverjena sintaksa)
 
 from __future__ import annotations
+import hashlib
 import os
 from pathlib import Path
+from urllib.parse import quote
 from dotenv import load_dotenv
 import warnings # Dodano za opozorila
 
@@ -54,13 +56,24 @@ if not DATABASE_URL:
 # ==========================================
 
 API_KEYS_RAW = os.environ.get("API_KEYS", "")
-VALID_API_KEYS = set(key.strip() for key in API_KEYS_RAW.split(",") if key.strip())
+
+
+def hash_api_key(key: str) -> str:
+    """Vrnemo SHA-256 hash API ključa."""
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+
+VALID_API_KEY_HASHES = {
+    hash_api_key(key.strip())
+    for key in API_KEYS_RAW.split(",")
+    if key.strip()
+}
 
 DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
-if not VALID_API_KEYS and not DEBUG:
+if not VALID_API_KEY_HASHES and not DEBUG:
     raise RuntimeError("❌ API_KEYS manjka v .env datoteki! Potrebno za produkcijsko okolje.")
-elif not VALID_API_KEYS and DEBUG:
+elif not VALID_API_KEY_HASHES and DEBUG:
     print("⚠️ OPOZORILO: API_KEYS ni nastavljen v .env. V DEBUG načinu dostop ni omejen.")
 
 ALLOWED_ORIGINS_RAW = os.environ.get("ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
@@ -72,7 +85,28 @@ RATE_LIMIT_PER_MINUTE = int(os.environ.get("RATE_LIMIT_PER_MINUTE", "60"))
 # REDIS NASTAVITVE
 # ==========================================
 
-REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD")
+REDIS_USERNAME = os.environ.get("REDIS_USERNAME")
+REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
+REDIS_PORT = os.environ.get("REDIS_PORT", "6379")
+REDIS_DB = os.environ.get("REDIS_DB", "0")
+
+if "REDIS_URL" in os.environ:
+    REDIS_URL = os.environ["REDIS_URL"]
+else:
+    if not REDIS_PASSWORD and not DEBUG:
+        raise RuntimeError(
+            "❌ Redis povezava zahteva geslo. Nastavite REDIS_PASSWORD ali REDIS_URL."
+        )
+    if not REDIS_PASSWORD and DEBUG:
+        print(
+            "⚠️ OPOZORILO: REDIS_PASSWORD ni nastavljen. V DEBUG načinu je dovoljena nezaščitena povezava."
+        )
+    auth_part = ""
+    if REDIS_PASSWORD:
+        user_part = f"{REDIS_USERNAME}:" if REDIS_USERNAME else ""
+        auth_part = f"{user_part}{quote(REDIS_PASSWORD)}@"
+    REDIS_URL = f"redis://{auth_part}{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
 SESSION_TTL_SECONDS = int(os.environ.get("SESSION_TTL_SECONDS", "7200"))
 
 # ==========================================
@@ -272,7 +306,7 @@ __all__ = [
     "GURS_WFS_URL", "GURS_GEOCODE_URL", "GURS_API_TIMEOUT",
     "DEFAULT_MAP_CENTER", "DEFAULT_MAP_ZOOM",
     "ENABLE_GURS_MAP", "ENABLE_REAL_GURS_API", "GURS_WMS_LAYERS", "DEBUG",
-    "VALID_API_KEYS", "ALLOWED_ORIGINS", "RATE_LIMIT_PER_MINUTE",
+    "hash_api_key", "VALID_API_KEY_HASHES", "ALLOWED_ORIGINS", "RATE_LIMIT_PER_MINUTE",
     "REDIS_URL", "SESSION_TTL_SECONDS",
     "MAX_PDF_SIZE_MB", "MAX_PDF_SIZE_BYTES", "ANALYSIS_CHUNK_SIZE",
 ]
