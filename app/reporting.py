@@ -240,10 +240,13 @@ def generate_word_report(
     # DRUGA SEKCIJA: Podrobno poročilo v ležeči orientaciji (landscape)
     # Dodamo novo sekcijo, kar ustvari section break in novo stran
     section = doc.add_section()
+
+    # Za landscape orientacijo moramo EKSPLICITNO zamenjati širino in višino
+    # ker python-docx sam ne zamenja dimenzij pri spremembi orientacije
     section.orientation = WD_ORIENT.LANDSCAPE
-    new_width, new_height = section.page_height, section.page_width
-    section.page_width = new_width
-    section.page_height = new_height
+    section.page_width = Inches(11.69)   # A4 landscape width (prej height)
+    section.page_height = Inches(8.27)   # A4 landscape height (prej width)
+
     margin = Inches(0.7)
     section.top_margin = margin
     section.bottom_margin = margin
