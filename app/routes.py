@@ -28,7 +28,11 @@ from .knowledge_base import (
     get_uredba_text,
 )
 from .middleware import verify_api_key
-from .municipalities import get_municipality_profile
+from .municipalities import (
+    get_default_municipality_slug,
+    get_municipality_profile,
+    municipality_public_payload,
+)
 from .parsers import convert_pdf_pages_to_images, parse_pdf
 from .prompts import build_prompt
 from .reporting import generate_word_report
@@ -93,6 +97,16 @@ async def frontend() -> str:
 @router.get("/health")
 async def health() -> Dict[str, str]:
     return {"status": "ok", "timestamp": datetime.utcnow().isoformat()}
+
+
+@router.get("/municipalities")
+async def list_municipalities(api_key: str = Depends(verify_api_key)) -> Dict[str, Any]:
+    """Expose supported municipalities to the frontend."""
+
+    return {
+        "municipalities": municipality_public_payload(),
+        "default_slug": get_default_municipality_slug(),
+    }
 
 @router.get("/progress/{session_id}")
 async def get_progress(session_id: str):
