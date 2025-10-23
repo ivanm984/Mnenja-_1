@@ -362,7 +362,6 @@
                         <span id="theme-icon">🌙</span>
                     </button>
                     <button class="btn btn-secondary" onclick="app.showSessionsModal()">📁 Shranjeno</button>
-                    <button class="btn btn-primary" onclick="app.saveProgress()" id="save-btn" style="display: none;">💾 Shrani napredek</button>
                 </div>
             </div>
         </div>
@@ -501,6 +500,7 @@
                 </table>
                 <div class="actions-bar">
                     <button class="btn btn-secondary" onclick="app.resetAnalysis()">🔄 Nova Analiza</button>
+                    <button class="btn btn-primary" onclick="app.saveProgress()" id="save-btn" style="display: none;">💾 Shrani napredek</button>
                     <div style="display: flex; align-items: center; gap: 1rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 0.75rem 1.25rem;">
                         <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
                             <input type="checkbox" id="report-format-summary" style="width: 18px; height: 18px; cursor: pointer;">
