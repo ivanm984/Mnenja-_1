@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import re
+import secrets
 import time
 from datetime import datetime
 from pathlib import Path
@@ -33,7 +34,9 @@ from .prompts import build_prompt
 from .reporting import generate_word_report
 from .schemas import (AnalysisReportPayload, ConfirmReportPayload,
                     SaveSessionPayload)
+from .security import sanitize_ai_prompt_data, validate_pdf_upload
 from .services import PDFService, ai_service
+from .config import MAX_PDF_SIZE_BYTES
 from .temp_storage import (cleanup_session_storage, load_images_from_paths,
                            save_images_for_session)
 from .utils import infer_project_name
@@ -308,8 +311,23 @@ async def extract_data(
         HTTPException(500): Če AI analiza ne uspe
     """
     start_time = time.perf_counter()
-    session_id = str(start_time)
+    # Generiraj kriptografsko varen naključni session ID
+    # Uporabljamo secrets.token_urlsafe() namesto timestamp-a za preprečitev ugibanja session ID-jev
+    session_id = secrets.token_urlsafe(32)
     logger.info(f"[{session_id}] Začetek /extract-data z {len(pdf_files)} datotekami")
+
+    # VARNOSTNO: Validiraj vse PDF datoteke pred procesiranjem
+    logger.info(f"[{session_id}] Začenjam validacijo {len(pdf_files)} PDF datotek...")
+    for upload in pdf_files:
+        try:
+            await validate_pdf_upload(upload, MAX_PDF_SIZE_BYTES)
+        except ValueError as e:
+            logger.error(f"[{session_id}] PDF validacija neuspešna za {upload.filename}: {e}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Datoteka '{upload.filename}' ni veljavna: {str(e)}"
+            )
+    logger.info(f"[{session_id}] ✓ Vse PDF datoteke so veljavne")
 
     # Shrani začetni progress v cache za frontend polling
     progress_data = {
@@ -423,6 +441,16 @@ async def _process_analyze_report_background(
 
         final_key_data = payload.key_data.dict()
 
+        # VARNOSTNO: Sanitiziraj vse uporabniške vnose pred uporabo v AI prompt-ih
+        # To preprečuje prompt injection napade
+        logger.info(f"[{session_id}] Sanitiziram podatke za AI prompt...")
+        sanitized_data = sanitize_ai_prompt_data(
+            project_text=data.get('project_text', ''),
+            metadata=data.get('metadata', {}),
+            key_data=final_key_data
+        )
+        logger.info(f"[{session_id}] Sanitizacija dokončana")
+
         municipality_context_lines = [
             f"Občina: {municipality_profile.name} (oznaka: {municipality_profile.slug})",
         ]
@@ -433,15 +461,16 @@ async def _process_analyze_report_background(
         )
         municipality_context_block = "\n".join(municipality_context_lines).strip()
 
+        # Uporabimo sanitizirane podatke namesto originalnih
         modified_project_text = f"""
             --- METAPODATKI PROJEKTA ---
-            {data.get('metadata', {})}
+            {sanitized_data['metadata']}
             --- KONTEKST OBČINE ---
             {municipality_context_block}
             --- KLJUČNI GABARITNI IN LOKACIJSKI PODATKI PROJEKTA (Ekstrahirano in POTRJENO) ---
-            {final_key_data}
+            {sanitized_data['key_data']}
             --- DOKUMENTACIJA (Besedilo in grafike) ---
-            {data.get('project_text', '')}
+            {sanitized_data['text']}
             """
 
         zahteve_chunks = list(chunk_list(zahteve_za_analizo, ANALYSIS_CHUNK_SIZE))

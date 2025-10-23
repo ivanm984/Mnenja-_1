@@ -31,13 +31,17 @@ async def verify_api_key(x_api_key: Optional[str] = Header(None)) -> str:
     Raises:
         HTTPException(401): Če API ključ ni veljaven ali manjka
     """
-    # V DEBUG načinu dovoli dostop brez API ključa
+    # V DEBUG načinu dovoli dostop brez API ključa (SAMO za razvoj!)
+    # OPOMBA: startup_event() v main.py preprečuje DEBUG=true v produkciji
     if DEBUG and not x_api_key:
-        logger.warning("⚠️ DEBUG mode: Zahteva brez API ključa je dovoljena")
+        logger.warning(
+            "⚠️ DEBUG mode: Zahteva brez API ključa je dovoljena. "
+            "To je VARNOSTNO TVEGANJE - uporabite samo v razvojnem okolju!"
+        )
         return "debug_bypass"
 
     if not x_api_key:
-        logger.warning("Zahteva brez API ključa")
+        logger.warning("Zahteva brez API ključa zavrnjena")
         raise HTTPException(
             status_code=401,
             detail="API ključ manjka. Dodajte 'X-API-Key' header.",
@@ -46,7 +50,11 @@ async def verify_api_key(x_api_key: Optional[str] = Header(None)) -> str:
 
     api_key_hash = hash_api_key(x_api_key)
     if not any(compare_digest(api_key_hash, stored) for stored in VALID_API_KEY_HASHES):
-        logger.warning(f"Neveljaven API ključ: {x_api_key[:8]}...")
+        # NE logiraj nobenih delov API ključa - samo hash za debugging
+        key_hash_prefix = api_key_hash[:12]
+        logger.warning(
+            f"Neveljaven API ključ poskus (hash prefix: {key_hash_prefix})"
+        )
         raise HTTPException(
             status_code=401,
             detail="Neveljaven API ključ",
