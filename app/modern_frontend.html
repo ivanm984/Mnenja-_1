@@ -164,28 +164,11 @@
             75% { transform: translateX(10px); }
         }
         
-        .municipality-display { display: flex; align-items: flex-start; gap: 0.75rem; padding: 1rem 1.25rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; transition: border 0.3s ease, box-shadow 0.3s ease; }
-        .municipality-display:focus-within { border-color: var(--primary-light); box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15); }
-        .municipality-icon { font-size: 1.5rem; line-height: 1; }
-        .municipality-info { flex: 1; display: flex; flex-direction: column; gap: 0.25rem; }
-        .municipality-name { font-weight: 600; color: var(--text); font-size: 1.1rem; display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
-        .municipality-tag { font-size: 0.75rem; font-weight: 600; padding: 0.2rem 0.6rem; border-radius: 999px; background: rgba(99, 102, 241, 0.12); color: var(--primary); }
-        .municipality-subtitle { font-size: 0.85rem; color: var(--text-muted); }
-        .municipality-rules { margin-top: 0.5rem; padding-left: 1.25rem; color: var(--text-muted); font-size: 0.85rem; display: grid; gap: 0.35rem; }
-        .municipality-empty { font-size: 0.9rem; color: var(--text-muted); }
-        .form-help { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.4rem; }
-        .api-key-control { display: flex; gap: 0.5rem; align-items: center; }
-        .api-key-control .form-input { flex: 1; }
-        .api-key-buttons { display: flex; gap: 0.5rem; }
-        .api-key-status { margin-top: 0.5rem; font-size: 0.85rem; display: flex; align-items: center; gap: 0.4rem; }
-        .api-key-status[data-status="valid"] { color: var(--success); }
-        .api-key-status[data-status="invalid"] { color: var(--danger); }
-        .api-key-status[data-status="checking"], .api-key-status[data-status="pending"] { color: var(--warning); }
-        .api-key-status[data-status="missing"] { color: var(--text-muted); }
-        .status-dot { width: 10px; height: 10px; border-radius: 999px; background: currentColor; box-shadow: 0 0 0 2px rgba(0,0,0,0.05); }
-        .status-dot.spin { animation: spin 1s linear infinite; border: 2px solid currentColor; border-top-color: transparent; background: transparent; }
-        .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); padding: 0.6rem 1rem; border-radius: 10px; cursor: pointer; transition: all 0.3s ease; }
-        .btn-ghost:hover:not(:disabled) { border-color: var(--primary-light); color: var(--primary); }
+        .municipality-display { display: flex; align-items: center; gap: 0.75rem; padding: 1rem 1.25rem; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; }
+        .municipality-icon { font-size: 1.5rem; }
+        .municipality-info { flex: 1; }
+        .municipality-name { font-weight: 600; color: var(--text); font-size: 1.1rem; }
+        .municipality-subtitle { font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem; }
         
         .key-data-grid { display: grid; gap: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); margin-bottom: 2rem; }
         .key-data-item { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; transition: all 0.3s ease; }
@@ -350,12 +333,6 @@
             .pdf-viewer-title { max-width: 100%; }
             .pdf-viewer-modal { width: 100vw; border-right: none; box-shadow: none; }
         }
-
-        @media (prefers-reduced-motion: reduce) {
-            *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; scroll-behavior: auto !important; }
-            .step-circle.processing::before, .step-circle.processing::after { animation: none !important; }
-            .toast { transition: none !important; }
-        }
     </style>
 </head>
 <body class="dark-mode">
@@ -415,35 +392,12 @@
             <div id="content-step-1">
                 <h2 class="section-title">📤 Nalaganje Dokumentov</h2>
                 <div class="form-group">
-                    <label class="form-label" for="api-key-input">API ključ</label>
-                    <div class="api-key-control">
-                        <input type="password" id="api-key-input" class="form-input" placeholder="Vnesite API ključ" autocomplete="off" spellcheck="false">
-                        <div class="api-key-buttons">
-                            <button type="button" class="btn-ghost" id="api-key-visibility" aria-pressed="false" title="Prikaži ali skrij API ključ">🙈</button>
-                            <button type="button" class="btn btn-secondary btn-small" id="api-key-validate">Preveri</button>
-                        </div>
-                    </div>
-                    <p class="form-help">Ključ se shrani le v vaš brskalnik in se samodejno doda v vse zahteve.</p>
-                    <div class="api-key-status" id="api-key-status" data-status="missing" aria-live="polite">
-                        <span class="status-dot"></span>
-                        <span>Vnesite API ključ za dostop do analiz.</span>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label class="form-label" for="municipality-select">Občina</label>
-                    <select id="municipality-select" class="form-select" onchange="app.handleMunicipalityChange(this.value)">
-                        <option value="" disabled selected>Nalaganje seznama občin...</option>
-                    </select>
-                    <p class="form-help">Pravila, priloge in poročila se prilagodijo izbrani občini.</p>
-                    <div class="municipality-display" tabindex="0">
+                    <label class="form-label">Občina</label>
+                    <div class="municipality-display">
                         <span class="municipality-icon">🏛️</span>
                         <div class="municipality-info">
-                            <div class="municipality-name">
-                                <span id="municipality-name">Ni izbrane občine</span>
-                                <span class="municipality-tag" id="municipality-tag" style="display: none;">Privzeto</span>
-                            </div>
-                            <div class="municipality-subtitle" id="municipality-subtitle">Izberite občino za prilagoditev analiz.</div>
-                            <ul class="municipality-rules" id="municipality-rules" style="display: none;"></ul>
+                            <div class="municipality-name">Občina Litija</div>
+                            <div class="municipality-subtitle">Izbrana občina za analizo</div>
                         </div>
                     </div>
                 </div>
@@ -666,15 +620,6 @@
         hasUnsavedChanges: false,
         isSaving: false,
         saveTimeout: null,
-        apiKey: '',
-        apiKeyVisible: false,
-        apiKeyStatus: 'missing',
-        municipalities: [],
-        selectedMunicipality: null,
-        defaultMunicipalitySlug: null,
-        municipalitySelect: null,
-        apiKeyInput: null,
-        pendingMunicipalitySlug: null,
 
         // PDF Viewer state
         pdfDoc: null,
@@ -717,36 +662,6 @@
                 const savedTheme = localStorage.getItem('theme') || 'dark';
                 document.body.className = `${savedTheme}-mode`;
                 document.getElementById('theme-icon').textContent = savedTheme === 'dark' ? '🌙' : '☀️';
-
-                this.municipalitySelect = document.getElementById('municipality-select');
-                this.apiKeyInput = document.getElementById('api-key-input');
-
-                if (this.municipalitySelect) {
-                    this.municipalitySelect.disabled = true;
-                }
-
-                const storedApiKey = localStorage.getItem('pia_api_key') || '';
-                if (storedApiKey) {
-                    this.apiKey = storedApiKey;
-                    if (this.apiKeyInput) {
-                        this.apiKeyInput.value = storedApiKey;
-                    }
-                    this.updateApiKeyStatus('pending', 'API ključ čaka na preverjanje.');
-                } else {
-                    this.updateApiKeyStatus('missing', 'Vnesite API ključ za dostop do analiz.');
-                }
-
-                const storedMunicipality = localStorage.getItem('municipality_slug');
-                if (storedMunicipality) {
-                    this.pendingMunicipalitySlug = storedMunicipality;
-                }
-
-                this.bindApiKeyEvents();
-                this.updateMunicipalityPreview();
-
-                if (this.apiKey) {
-                    this.validateApiKey({ silent: true });
-                }
 
                 this.pdfPopoutButton = document.getElementById('pdf-popout');
                 this.setPdfPopoutEnabled(false);
@@ -796,298 +711,6 @@
                         }
                     }
                 });
-            },
-
-            bindApiKeyEvents() {
-                const visibilityButton = document.getElementById('api-key-visibility');
-                const validateButton = document.getElementById('api-key-validate');
-
-                if (this.apiKeyInput) {
-                    this.apiKeyInput.addEventListener('input', (event) => {
-                        this.handleApiKeyInput(event.target.value);
-                    });
-                    this.apiKeyInput.addEventListener('keydown', (event) => {
-                        if (event.key === 'Enter') {
-                            event.preventDefault();
-                            this.validateApiKey();
-                        }
-                    });
-                }
-
-                if (visibilityButton) {
-                    visibilityButton.addEventListener('click', () => this.toggleApiKeyVisibility());
-                }
-
-                if (validateButton) {
-                    validateButton.addEventListener('click', () => this.validateApiKey());
-                }
-            },
-
-            handleApiKeyInput(value) {
-                this.apiKey = value.trim();
-                if (this.apiKey) {
-                    localStorage.setItem('pia_api_key', this.apiKey);
-                    this.updateApiKeyStatus('pending', 'API ključ je shranjen. Kliknite »Preveri« za potrditev.');
-                } else {
-                    localStorage.removeItem('pia_api_key');
-                    this.updateApiKeyStatus('missing', 'Vnesite API ključ za dostop do analiz.');
-                }
-            },
-
-            toggleApiKeyVisibility() {
-                this.apiKeyVisible = !this.apiKeyVisible;
-                if (this.apiKeyInput) {
-                    this.apiKeyInput.type = this.apiKeyVisible ? 'text' : 'password';
-                }
-                const visibilityButton = document.getElementById('api-key-visibility');
-                if (visibilityButton) {
-                    visibilityButton.textContent = this.apiKeyVisible ? '👁️' : '🙈';
-                    visibilityButton.setAttribute('aria-pressed', String(this.apiKeyVisible));
-                }
-            },
-
-            updateApiKeyStatus(status, message) {
-                this.apiKeyStatus = status;
-                const statusEl = document.getElementById('api-key-status');
-                if (!statusEl) return;
-                statusEl.dataset.status = status;
-
-                const dot = statusEl.querySelector('.status-dot');
-                if (dot) {
-                    dot.classList.toggle('spin', status === 'checking');
-                }
-
-                const messageEl = Array.from(statusEl.querySelectorAll('span')).find((el) => !el.classList.contains('status-dot'));
-                if (messageEl) {
-                    messageEl.textContent = message;
-                }
-            },
-
-            ensureApiKey() {
-                if (this.apiKey && this.apiKey.trim()) {
-                    return true;
-                }
-                this.updateApiKeyStatus('missing', 'Potrebujete veljaven API ključ.');
-                this.showToast('error', 'API ključ', 'Pred nadaljevanjem vnesite veljaven API ključ.');
-                if (this.apiKeyInput) {
-                    this.apiKeyInput.focus();
-                }
-                return false;
-            },
-
-            async validateApiKey({ silent = false } = {}) {
-                if (!this.ensureApiKey()) {
-                    return false;
-                }
-
-                this.updateApiKeyStatus('checking', 'Preverjam API ključ ...');
-
-                try {
-                    const response = await this.apiFetch('/health', {}, { skipAuthStatusUpdate: true });
-                    if (!response.ok) {
-                        const detail = await response.text();
-                        throw new Error(detail || 'Strežnik je vrnil napako.');
-                    }
-
-                    this.updateApiKeyStatus('valid', 'API ključ je potrjen.');
-                    if (!silent) {
-                        this.showToast('success', 'API ključ', 'API ključ je veljaven.');
-                    }
-
-                    await this.loadMunicipalities({ silent: true });
-                    return true;
-                } catch (error) {
-                    const message = error?.message || 'Preverjanje ni uspelo.';
-                    this.updateApiKeyStatus('invalid', message);
-                    if (!silent) {
-                        this.showToast('error', 'API ključ', message);
-                    }
-                    return false;
-                }
-            },
-
-            async loadMunicipalities({ silent = false } = {}) {
-                if (!this.apiKey) {
-                    this.renderMunicipalityOptions();
-                    this.updateMunicipalityPreview();
-                    return;
-                }
-
-                try {
-                    const response = await this.apiFetch('/municipalities');
-                    if (!response.ok) {
-                        throw new Error('Ni mogoče pridobiti seznama občin.');
-                    }
-
-                    const data = await response.json();
-                    this.municipalities = Array.isArray(data.municipalities) ? data.municipalities : [];
-                    this.defaultMunicipalitySlug = data.default_slug || (this.municipalities[0]?.slug ?? null);
-
-                    if (this.municipalities.length > 0) {
-                        const desiredSlug = this.pendingMunicipalitySlug || localStorage.getItem('municipality_slug') || this.defaultMunicipalitySlug;
-                        const found = this.municipalities.find((municipality) => municipality.slug === desiredSlug) || this.municipalities[0];
-                        this.selectedMunicipality = found || null;
-                        if (this.selectedMunicipality) {
-                            localStorage.setItem('municipality_slug', this.selectedMunicipality.slug);
-                        }
-                        this.pendingMunicipalitySlug = null;
-                    } else {
-                        this.selectedMunicipality = null;
-                    }
-
-                    this.renderMunicipalityOptions();
-                    this.updateMunicipalityPreview();
-                    if (!silent && this.selectedMunicipality) {
-                        this.showToast('success', 'Občina', `${this.selectedMunicipality.name} je pripravljena.`);
-                    }
-                } catch (error) {
-                    console.error('Napaka pri nalaganju občin:', error);
-                    this.renderMunicipalityOptions(true);
-                    this.updateMunicipalityPreview(error);
-                    if (!silent) {
-                        this.showToast('error', 'Občina', error?.message || 'Ni mogoče naložiti občin.');
-                    }
-                } finally {
-                    if (this.municipalitySelect) {
-                        this.municipalitySelect.disabled = this.municipalities.length === 0;
-                    }
-                }
-            },
-
-            renderMunicipalityOptions(isError = false) {
-                if (!this.municipalitySelect) return;
-
-                this.municipalitySelect.innerHTML = '';
-
-                if (isError) {
-                    const option = document.createElement('option');
-                    option.value = '';
-                    option.disabled = true;
-                    option.textContent = 'Ni mogoče naložiti občin';
-                    this.municipalitySelect.appendChild(option);
-                    this.municipalitySelect.value = '';
-                    return;
-                }
-
-                if (!this.municipalities.length) {
-                    const option = document.createElement('option');
-                    option.value = '';
-                    option.disabled = true;
-                    option.textContent = 'Ni konfiguriranih občin';
-                    this.municipalitySelect.appendChild(option);
-                    this.municipalitySelect.value = '';
-                    return;
-                }
-
-                this.municipalities.forEach((municipality) => {
-                    const option = document.createElement('option');
-                    option.value = municipality.slug;
-                    option.textContent = municipality.name;
-                    this.municipalitySelect.appendChild(option);
-                });
-
-                if (this.selectedMunicipality) {
-                    this.municipalitySelect.value = this.selectedMunicipality.slug;
-                }
-            },
-
-            handleMunicipalityChange(slug) {
-                if (!slug) return;
-                const municipality = this.municipalities.find((item) => item.slug === slug);
-                if (!municipality) return;
-
-                this.selectedMunicipality = municipality;
-                localStorage.setItem('municipality_slug', municipality.slug);
-                this.updateMunicipalityPreview();
-                this.showToast('success', 'Občina posodobljena', `${municipality.name} je izbrana za analizo.`);
-            },
-
-            updateMunicipalityPreview(loadError = null) {
-                const nameEl = document.getElementById('municipality-name');
-                const subtitleEl = document.getElementById('municipality-subtitle');
-                const rulesEl = document.getElementById('municipality-rules');
-                const tagEl = document.getElementById('municipality-tag');
-
-                if (!nameEl || !subtitleEl || !rulesEl) {
-                    return;
-                }
-
-                if (loadError) {
-                    nameEl.textContent = 'Občine niso dosegljive';
-                    subtitleEl.textContent = 'Preverite API ključ ali omrežno povezavo in poskusite znova.';
-                    rulesEl.style.display = 'none';
-                    if (tagEl) tagEl.style.display = 'none';
-                    return;
-                }
-
-                if (!this.selectedMunicipality) {
-                    nameEl.textContent = 'Ni izbrane občine';
-                    subtitleEl.textContent = 'Izberite občino za prilagoditev analiz.';
-                    rulesEl.style.display = 'none';
-                    if (tagEl) tagEl.style.display = 'none';
-                    return;
-                }
-
-                nameEl.textContent = this.selectedMunicipality.name;
-                subtitleEl.textContent = this.selectedMunicipality.prompt_context || 'Analiza bo prilagojena lokalnim pravilom.';
-
-                if (tagEl) {
-                    if (this.defaultMunicipalitySlug && this.selectedMunicipality.slug === this.defaultMunicipalitySlug) {
-                        tagEl.textContent = 'Privzeto';
-                        tagEl.style.display = '';
-                    } else {
-                        tagEl.style.display = 'none';
-                    }
-                }
-
-                rulesEl.innerHTML = '';
-                const rules = Array.isArray(this.selectedMunicipality.prompt_special_rules) ? this.selectedMunicipality.prompt_special_rules : [];
-                if (rules.length) {
-                    rules.slice(0, 4).forEach((rule) => {
-                        const li = document.createElement('li');
-                        li.textContent = rule;
-                        rulesEl.appendChild(li);
-                    });
-                    rulesEl.style.display = 'grid';
-                } else {
-                    rulesEl.style.display = 'none';
-                }
-            },
-
-            async apiFetch(url, options = {}, extra = {}) {
-                const { skipAuthStatusUpdate = false } = extra;
-                const config = { ...options };
-                const headers = options.headers instanceof Headers
-                    ? new Headers(options.headers)
-                    : new Headers(options.headers || {});
-
-                if (this.apiKey && this.apiKey.trim()) {
-                    headers.set('X-API-Key', this.apiKey.trim());
-                }
-
-                config.headers = headers;
-
-                let response;
-                try {
-                    response = await fetch(url, config);
-                } catch (error) {
-                    if (error?.name === 'TypeError') {
-                        throw new Error('Povezava s strežnikom ni uspela. Preverite omrežje.');
-                    }
-                    throw error;
-                }
-
-                if (response.status === 401 || response.status === 403) {
-                    if (!skipAuthStatusUpdate) {
-                        this.updateApiKeyStatus('invalid', 'API ključ je bil zavrnjen. Preverite konfiguracijo.');
-                    }
-                    const errorMessage = response.status === 401
-                        ? 'Dostop zavrnjen (401). Preverite API ključ.'
-                        : 'Dostop zavrnjen (403). Preverite dovoljenja ali API ključ.';
-                    throw new Error(errorMessage);
-                }
-
-                return response;
             },
 
             getPdfPopoutButton() {
@@ -1651,7 +1274,6 @@
 
             async extractData() {
                 if (this.files.length === 0) return;
-                if (!this.ensureApiKey()) return;
 
                 document.getElementById('extract-btn').disabled = true;
                 this.showLoading('Inicializacija ekstrakcije...');
@@ -1659,17 +1281,13 @@
                 try {
                     const formData = new FormData();
                     this.files.forEach(file => formData.append('pdf_files', file));
-                    const municipalitySlug = this.selectedMunicipality?.slug || this.defaultMunicipalitySlug || 'litija';
-                    formData.append('municipality_slug', municipalitySlug);
+                    formData.append('municipality_slug', 'litija');
                     formData.append('files_meta_json', JSON.stringify(Object.values(this.filesMeta)));
 
                     // Klic API-ja za začetek procesiranja
                     console.log('[Upload] Pošiljam zahtevo za ekstrakcijo podatkov');
-                    const response = await this.apiFetch('/extract-data', { method: 'POST', body: formData });
-                    if (!response.ok) {
-                        const detail = await response.text();
-                        throw new Error(detail || 'API napaka');
-                    }
+                    const response = await fetch('/extract-data', { method: 'POST', body: formData });
+                    if (!response.ok) throw new Error('API napaka');
 
                     const initData = await response.json();
                     this.sessionId = initData.session_id;
@@ -1817,9 +1435,6 @@
                     this.showToast('error', 'Manjkajoči podatki', 'Prosimo izpolnite EUP in Namensko rabo');
                     return;
                 }
-                if (!this.ensureApiKey()) {
-                    return;
-                }
 
                 this.currentStep = 3;
                 this.updateUI();
@@ -1841,7 +1456,7 @@
                     };
 
                     console.log('[Analyze] Pošiljam zahtevo za analizo');
-                    const response = await this.apiFetch('/analyze-report', {
+                    const response = await fetch('/analyze-report', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
@@ -2037,7 +1652,6 @@
 
             async saveProgress() {
                 if (!this.sessionId || this.isSaving) return;
-                if (!this.ensureApiKey()) return;
 
                 this.isSaving = true;
                 this.updateSaveButtonState();
@@ -2078,16 +1692,13 @@
                         summary: `${this.results.length} zahtev: ${compliantCount} skladnih, ${nonCompliantCount} neskladnih, ${notRelevantCount} ni relevantno`
                     };
 
-                    const response = await this.apiFetch('/save-session', {
+                    const response = await fetch('/save-session', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
                     });
 
-                    if (!response.ok) {
-                        const detail = await response.text();
-                        throw new Error(detail || 'Napaka pri shranjevanju');
-                    }
+                    if (!response.ok) throw new Error('Napaka pri shranjevanju');
 
                     this.hasUnsavedChanges = false;
                     this.updateSaveButtonState();
@@ -2132,9 +1743,6 @@
                     this.showToast('error', 'Napaka', 'Seja ni aktivna');
                     return;
                 }
-                if (!this.ensureApiKey()) {
-                    return;
-                }
 
                 if (this.hasUnsavedChanges) {
                     await this.saveProgress();
@@ -2168,23 +1776,17 @@
                         stevilka_zadeve: stevilkaZadeve
                     };
                     
-                    const response = await this.apiFetch('/confirm-report', {
+                    const response = await fetch('/confirm-report', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
                     });
-
-                    if (!response.ok) {
-                        const detail = await response.text();
-                        throw new Error(detail || 'Napaka pri generiranju poročila');
-                    }
+                    
+                    if (!response.ok) throw new Error('Napaka pri generiranju poročila');
                     const data = await response.json();
-
+                    
                     if (data.docx_path) {
-                        const docxResponse = await this.apiFetch(`/${data.docx_path}`);
-                        if (!docxResponse.ok) {
-                            throw new Error('Napaka pri prenosu Word poročila');
-                        }
+                        const docxResponse = await fetch(`/${data.docx_path}`);
                         const blob = await docxResponse.blob();
                         const url = window.URL.createObjectURL(blob);
                         const a = document.createElement('a');
@@ -2198,24 +1800,16 @@
                     
                     if (data.xlsx_path) {
                         setTimeout(async () => {
-                            try {
-                                const xlsxResponse = await this.apiFetch(`/${data.xlsx_path}`);
-                                if (!xlsxResponse.ok) {
-                                    throw new Error('Napaka pri prenosu Excel poročila');
-                                }
-                                const blob = await xlsxResponse.blob();
-                                const url = window.URL.createObjectURL(blob);
-                                const a = document.createElement('a');
-                                a.href = url;
-                                a.download = data.xlsx_path.split('/').pop();
-                                document.body.appendChild(a);
-                                a.click();
-                                document.body.removeChild(a);
-                                window.URL.revokeObjectURL(url);
-                            } catch (error) {
-                                console.error('Prenos Excel poročila ni uspel:', error);
-                                this.showToast('error', 'Prenos Excel poročila', error?.message || 'Napaka pri prenosu Excel poročila');
-                            }
+                            const xlsxResponse = await fetch(`/${data.xlsx_path}`);
+                            const blob = await xlsxResponse.blob();
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = data.xlsx_path.split('/').pop();
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            window.URL.revokeObjectURL(url);
                         }, 1000);
                     }
                     
@@ -2290,21 +1884,14 @@
             async loadSessions() {
                 const container = document.getElementById('sessions-list-container');
                 container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📂</div><p>Nalagam shranjene analize...</p></div>';
-                if (!this.ensureApiKey()) {
-                    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🔑</div><p>Za ogled shranjenih analiz vnesite veljaven API ključ.</p></div>';
-                    return;
-                }
-
+                
                 try {
-                    const response = await this.apiFetch('/saved-sessions');
-                    if (!response.ok) {
-                        const detail = await response.text();
-                        throw new Error(detail || 'Napaka pri nalaganju sej');
-                    }
+                    const response = await fetch('/saved-sessions');
+                    if (!response.ok) throw new Error('Napaka pri nalaganju sej');
                     const data = await response.json();
-
+                    
                     if (data.sessions && data.sessions.length > 0) {
-                        container.innerHTML = '<div class="sessions-list">' +
+                        container.innerHTML = '<div class="sessions-list">' + 
                             data.sessions.map(session => `
                                 <div class="session-card">
                                     <div class="session-header">
@@ -2322,27 +1909,19 @@
                         container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📂</div><p>Trenutno ni shranjenih analiz</p></div>';
                     }
                 } catch (error) {
-                    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>Napaka pri nalaganju: ' + (error?.message || 'Neznana napaka') + '</p></div>';
+                    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>Napaka pri nalaganju: ' + error.message + '</p></div>';
                 }
             },
 
             async loadSession(sessionId) {
                 this.closeSessionsModal();
                 this.showLoading('Nalagam shranjeno analizo...');
-
-                if (!this.ensureApiKey()) {
-                    this.hideLoading();
-                    return;
-                }
-
+                
                 try {
-                    const response = await this.apiFetch(`/saved-sessions/${sessionId}`);
-                    if (!response.ok) {
-                        const detail = await response.text();
-                        throw new Error(detail || 'Seja ne obstaja');
-                    }
+                    const response = await fetch(`/saved-sessions/${sessionId}`);
+                    if (!response.ok) throw new Error('Seja ne obstaja');
                     const data = await response.json();
-
+                    
                     this.sessionId = sessionId;
                     const sessionData = typeof data.data === 'string' ? JSON.parse(data.data) : data.data;
 
@@ -2390,28 +1969,21 @@
                     this.showToast('success', 'Analiza naložena', 'Lahko nadaljujete z urejanjem');
                 } catch (error) {
                     this.hideLoading();
-                    this.showToast('error', 'Napaka pri nalaganju', error?.message || 'Neznana napaka');
+                    this.showToast('error', 'Napaka pri nalaganju', error.message);
                 }
             },
 
             async deleteSession(sessionId) {
                 if (!confirm('Ali ste prepričani, da želite izbrisati to analizo?')) return;
-
-                if (!this.ensureApiKey()) {
-                    return;
-                }
-
+                
                 try {
-                    const response = await this.apiFetch(`/saved-sessions/${sessionId}`, { method: 'DELETE' });
-                    if (!response.ok) {
-                        const detail = await response.text();
-                        throw new Error(detail || 'Napaka pri brisanju');
-                    }
-
+                    const response = await fetch(`/saved-sessions/${sessionId}`, { method: 'DELETE' });
+                    if (!response.ok) throw new Error('Napaka pri brisanju');
+                    
                     this.showToast('success', 'Izbrisano', 'Analiza je bila izbrisana');
                     await this.loadSessions();
                 } catch (error) {
-                    this.showToast('error', 'Napaka pri brisanju', error?.message || 'Neznana napaka');
+                    this.showToast('error', 'Napaka pri brisanju', error.message);
                 }
             },
 
@@ -2615,7 +2187,7 @@
 
                 this.progressInterval = setInterval(async () => {
                     try {
-                        const response = await this.apiFetch(`/progress/${sessionId}`);
+                        const response = await fetch(`/progress/${sessionId}`);
                         if (!response.ok) {
                             console.warn('[Progress] Failed to fetch progress, status:', response.status);
                             return;
@@ -2633,9 +2205,6 @@
                         }
                     } catch (error) {
                         console.error('[Progress] Polling error:', error);
-                        this.stopProgressPolling();
-                        this.hideProgressBar();
-                        this.showToast('error', 'Napaka pri spremljanju', error?.message || 'Ni mogoče pridobiti napredka.');
                     }
                 }, 800); // Poll every 800ms
             },
@@ -2702,7 +2271,7 @@
 
                 while (attempts < maxAttempts) {
                     try {
-                        const response = await this.apiFetch(`/extract-data/result/${sessionId}`);
+                        const response = await fetch(`/extract-data/result/${sessionId}`);
                         if (!response.ok) {
                             console.error('[Polling] Napaka pri pridobivanju rezultata:', response.status);
                             throw new Error('Napaka pri pridobivanju rezultata');
@@ -2738,7 +2307,7 @@
 
                 while (attempts < maxAttempts) {
                     try {
-                        const response = await this.apiFetch(`/analyze-report/result/${sessionId}`);
+                        const response = await fetch(`/analyze-report/result/${sessionId}`);
                         if (!response.ok) {
                             console.error('[Polling] Napaka pri pridobivanju rezultata analize:', response.status);
                             throw new Error('Napaka pri pridobivanju rezultata');
