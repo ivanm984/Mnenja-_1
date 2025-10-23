@@ -11,8 +11,12 @@ from .database import db_manager
 from .routes import router
 from .gurs_routes import router as gurs_router
 from .logging_config import setup_logging
-from .config import PROJECT_ROOT, ALLOWED_ORIGINS, RATE_LIMIT_PER_MINUTE
+from .config import PROJECT_ROOT, ALLOWED_ORIGINS, RATE_LIMIT_PER_MINUTE, DEBUG
 from .middleware import log_requests_middleware
+import logging
+import os
+
+logger = logging.getLogger(__name__)
 
 # Inicializacija aplikacije
 app = FastAPI(
@@ -56,6 +60,29 @@ app.mount("/reports", StaticFiles(directory=str(reports_path)), name="reports")
 @app.on_event("startup")
 async def startup_event():
     """Inicializacija ob zagonu aplikacije."""
+    # KRITIČNO: Preveri, da DEBUG ni omogočen v produkcijskem okolju
+    if DEBUG:
+        env = os.getenv("ENV", "development").lower()
+        if env in ["production", "prod"]:
+            logger.critical("=" * 80)
+            logger.critical("❌ KRITIČNA VARNOSTNA NAPAKA ❌")
+            logger.critical("DEBUG=true je omogočen v produkcijskem okolju!")
+            logger.critical("To predstavlja KRITIČNO varnostno tveganje.")
+            logger.critical("API avtentikacija je obvozana za vse zahtevke!")
+            logger.critical("=" * 80)
+            raise RuntimeError(
+                "❌ KRITIČNA NAPAKA: DEBUG=true v produkciji!\n"
+                "Takoj nastavite DEBUG=false v .env datoteki.\n"
+                "Aplikacija se ne bo zagnala, dokler to ni popravljeno."
+            )
+        else:
+            logger.warning("=" * 80)
+            logger.warning("⚠️  DEBUG MODE OMOGOČEN ⚠️")
+            logger.warning("DEBUG=true omogoča API dostop brez avtentikacije!")
+            logger.warning("To je dovoljeno SAMO v razvojnem okolju.")
+            logger.warning("Za produkcijo OBVEZNO nastavite DEBUG=false!")
+            logger.warning("=" * 80)
+
     await db_manager.init_db()
 
 @app.on_event("shutdown")
