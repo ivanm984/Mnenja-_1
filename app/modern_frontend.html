@@ -420,10 +420,6 @@
                         </button>
                         <div class="pdf-dropdown-content" id="pdf-dropdown-content"></div>
                     </div>
-                    <div style="display: flex; gap: 0.5rem; margin-left: auto;">
-                        <button class="btn btn-secondary" id="save-session-btn" onclick="app.saveSession()" title="Shrani sejo (Ctrl+S)">💾 Shrani sejo</button>
-                        <button class="btn btn-secondary" id="load-session-btn" onclick="app.loadSession()" title="Naloži sejo (Ctrl+O)">📂 Naloži sejo</button>
-                    </div>
                     <button class="btn btn-primary" id="extract-btn" onclick="app.extractData()" disabled>🚀 Začni Analizo</button>
                 </div>
             </div>
@@ -695,26 +691,6 @@
 
             initKeyboardShortcuts() {
                 document.addEventListener('keydown', (e) => {
-                    // Ctrl+S - Save session
-                    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-                        e.preventDefault();
-                        this.saveSession();
-                    }
-
-                    // Ctrl+O - Load session
-                    if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
-                        e.preventDefault();
-                        this.loadSession();
-                    }
-
-                    // Ctrl+Shift+C - Clear session
-                    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'C') {
-                        e.preventDefault();
-                        if (confirm('Ali ste prepričani, da želite izbrisati shranjeno sejo?')) {
-                            this.clearLocalSession();
-                        }
-                    }
-
                     // Escape - Close PDF viewer if open
                     if (e.key === 'Escape') {
                         if (this.pdfDoc) {
