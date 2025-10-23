@@ -1498,7 +1498,6 @@
                         };
                     });
 
-                    this.renderResults();
                     this.stopProgressPolling();
                     this.updateStepAccess();
 
@@ -1514,6 +1513,11 @@
                     this.showToast('success', 'Analiza končana',
                         `${compliantCount} skladnih, ${nonCompliantCount} neskladnih, ${notRelevantCount} ni relevantno`);
                     this.nextStep();
+
+                    // Render results AFTER moving to step 4
+                    setTimeout(() => {
+                        this.renderResults();
+                    }, 0);
                 } catch (error) {
                     console.error('[Analyze] Napaka:', error);
                     this.stopProgressPolling();
@@ -1937,7 +1941,7 @@
                     this.results = (sessionData.zahteve || []).map(req => {
                         const result = resultsMap[req.id] || {};
                         const skladnost = (result.skladnost || '').toLowerCase();
-                        
+
                         return {
                             id: req.id,
                             requirement: req.naslov || 'Neznana zahteva',
@@ -1948,14 +1952,23 @@
                             skladnost: result.skladnost || 'Neskladno'
                         };
                     });
-                    
+
+                    console.log('[LoadSession] Loaded', this.results.length, 'results');
+                    console.log('[LoadSession] Results map:', resultsMap);
+                    console.log('[LoadSession] Zahteve:', sessionData.zahteve);
+
                     this.renderEupRabaPairs();
                     this.renderKeyData();
-                    this.renderResults();
                     this.updateStepAccess();
 
                     this.currentStep = 4;
                     this.updateUI();
+
+                    // Render results AFTER UI is updated and step 4 is visible
+                    setTimeout(() => {
+                        this.renderResults();
+                        console.log('[LoadSession] Results rendered');
+                    }, 0);
 
                     const caseInput = document.getElementById('stevilka-zadeve');
                     if (caseInput) {
