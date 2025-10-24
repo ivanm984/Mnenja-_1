@@ -1287,7 +1287,11 @@
                     // Klic API-ja za začetek procesiranja
                     console.log('[Upload] Pošiljam zahtevo za ekstrakcijo podatkov');
                     const response = await fetch('/extract-data', { method: 'POST', body: formData });
-                    if (!response.ok) throw new Error('API napaka');
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        const errorMessage = errorData.detail || `API napaka: ${response.status}`;
+                        throw new Error(errorMessage);
+                    }
 
                     const initData = await response.json();
                     this.sessionId = initData.session_id;
@@ -1462,7 +1466,11 @@
                         body: JSON.stringify(payload)
                     });
 
-                    if (!response.ok) throw new Error('Napaka pri analizi');
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        const errorMessage = errorData.detail || `Napaka pri analizi: ${response.status}`;
+                        throw new Error(errorMessage);
+                    }
                     const initData = await response.json();
                     console.log('[Analyze] Analiza se začne, session ID:', initData.session_id);
 
@@ -1702,7 +1710,11 @@
                         body: JSON.stringify(payload)
                     });
 
-                    if (!response.ok) throw new Error('Napaka pri shranjevanju');
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        const errorMessage = errorData.detail || `Napaka pri shranjevanju: ${response.status}`;
+                        throw new Error(errorMessage);
+                    }
 
                     this.hasUnsavedChanges = false;
                     this.updateSaveButtonState();
@@ -1786,7 +1798,11 @@
                         body: JSON.stringify(payload)
                     });
                     
-                    if (!response.ok) throw new Error('Napaka pri generiranju poročila');
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        const errorMessage = errorData.detail || `Napaka pri generiranju poročila: ${response.status}`;
+                        throw new Error(errorMessage);
+                    }
                     const data = await response.json();
                     
                     if (data.docx_path) {
@@ -1891,7 +1907,11 @@
                 
                 try {
                     const response = await fetch('/saved-sessions');
-                    if (!response.ok) throw new Error('Napaka pri nalaganju sej');
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        const errorMessage = errorData.detail || `Napaka pri nalaganju sej: ${response.status}`;
+                        throw new Error(errorMessage);
+                    }
                     const data = await response.json();
                     
                     if (data.sessions && data.sessions.length > 0) {
@@ -1923,7 +1943,11 @@
                 
                 try {
                     const response = await fetch(`/saved-sessions/${sessionId}`);
-                    if (!response.ok) throw new Error('Seja ne obstaja');
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        const errorMessage = errorData.detail || `Seja ne obstaja: ${response.status}`;
+                        throw new Error(errorMessage);
+                    }
                     const data = await response.json();
                     
                     this.sessionId = sessionId;
@@ -1991,7 +2015,11 @@
                 
                 try {
                     const response = await fetch(`/saved-sessions/${sessionId}`, { method: 'DELETE' });
-                    if (!response.ok) throw new Error('Napaka pri brisanju');
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({}));
+                        const errorMessage = errorData.detail || `Napaka pri brisanju: ${response.status}`;
+                        throw new Error(errorMessage);
+                    }
                     
                     this.showToast('success', 'Izbrisano', 'Analiza je bila izbrisana');
                     await this.loadSessions();
@@ -2286,8 +2314,10 @@
                     try {
                         const response = await fetch(`/extract-data/result/${sessionId}`);
                         if (!response.ok) {
-                            console.error('[Polling] Napaka pri pridobivanju rezultata:', response.status);
-                            throw new Error('Napaka pri pridobivanju rezultata');
+                            const errorData = await response.json().catch(() => ({}));
+                            const errorMessage = errorData.detail || `Napaka pri pridobivanju rezultata: ${response.status}`;
+                            console.error('[Polling] Napaka pri pridobivanju rezultata:', errorMessage);
+                            throw new Error(errorMessage);
                         }
 
                         const result = await response.json();
@@ -2322,8 +2352,10 @@
                     try {
                         const response = await fetch(`/analyze-report/result/${sessionId}`);
                         if (!response.ok) {
-                            console.error('[Polling] Napaka pri pridobivanju rezultata analize:', response.status);
-                            throw new Error('Napaka pri pridobivanju rezultata');
+                            const errorData = await response.json().catch(() => ({}));
+                            const errorMessage = errorData.detail || `Napaka pri pridobivanju rezultata analize: ${response.status}`;
+                            console.error('[Polling] Napaka pri pridobivanju rezultata analize:', errorMessage);
+                            throw new Error(errorMessage);
                         }
 
                         const result = await response.json();

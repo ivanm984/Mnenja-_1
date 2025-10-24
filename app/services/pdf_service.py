@@ -30,29 +30,36 @@ class PDFService:
         files_manifest = []
 
         for upload in pdf_files:
+            file_label = upload.filename or "Dokument.pdf"
+            logger.info(f"[{session_id}] Začenjam procesiranje datoteke: {file_label}")
+            
             async with stream_upload_to_tempfile(upload) as (temp_path, total_size):
+                logger.info(f"[{session_id}] Temp file ustvarjen: {temp_path}, velikost: {total_size} bytov")
+                
                 if total_size == 0 or temp_path is None:
-                    logger.warning(f"[{session_id}] Prazna datoteka: {upload.filename}")
+                    logger.warning(f"[{session_id}] Prazna datoteka: {file_label}")
                     continue
 
                 if total_size > MAX_PDF_SIZE_BYTES:
                     raise HTTPException(
                         status_code=400,
                         detail=(
-                            f"Datoteka '{upload.filename}' je prevelika "
+                            f"Datoteka '{file_label}' je prevelika "
                             f"(max {MAX_PDF_SIZE_BYTES // (1024*1024)}MB)"
                         ),
                     )
 
-                file_label = upload.filename or "Dokument.pdf"
-
                 # Ekstrahiraj besedilo brez nalaganja celotne datoteke v pomnilnik
                 try:
+                    logger.info(f"[{session_id}] Ekstrakcija besedila iz: {file_label}")
                     text = await asyncio.to_thread(parse_pdf, temp_path)
+                    logger.info(f"[{session_id}] Ekstrahirano {len(text)} znakov iz: {file_label}")
                     if text:
                         combined_text_parts.append(f"=== VIR: {file_label} ===\n{text}")
+                    else:
+                        logger.warning(f"[{session_id}] Ni besedila v datoteki: {file_label}")
                 except Exception as exc:  # pragma: no cover - odvisno od PDF vsebine
-                    logger.error(f"[{session_id}] Napaka pri branju {file_label}: {exc}")
+                    logger.error(f"[{session_id}] Napaka pri branju {file_label}: {exc}", exc_info=True)
                     raise HTTPException(
                         status_code=400,
                         detail=f"Napaka pri branju PDF '{file_label}': {str(exc)}",
@@ -85,7 +92,12 @@ class PDFService:
         if not combined_text_parts:
             raise HTTPException(
                 status_code=400,
-                detail="Iz naloženih datotek ni bilo mogoče prebrati besedila.",
+                detail=(
+                    "Iz naloženih PDF datotek ni bilo mogoče prebrati besedila. "
+                    "Možni razlogi: PDF vsebuje samo slike (potreben je OCR), "
+                    "PDF je zaščiten, ali pa je datoteka poškodovana. "
+                    "Poskusite ponovno izvoziti PDF ali uporabiti drugačen format."
+                ),
             )
 
         combined_text = "\n\n".join(combined_text_parts)

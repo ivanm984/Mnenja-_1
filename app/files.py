@@ -148,6 +148,9 @@ async def stream_upload_to_tempfile(
     upload: Union[UploadFile, str, Path, BinaryIO],
     chunk_size: int = 1024 * 1024,
 ) -> AsyncIterator[Tuple[Path | None, int]]:
+    import logging
+    logger = logging.getLogger(__name__)
+    
     temp_path: Path | None = None
     total_size = 0
 
@@ -155,26 +158,34 @@ async def stream_upload_to_tempfile(
     try:
         if isinstance(upload, UploadFile):
             # Asinhrono delo z UploadFile
+            filename = getattr(upload, 'filename', 'unknown')
+            logger.info(f"[stream_upload] Začenjam streaming za: {filename}")
+            
             seek = getattr(upload, "seek", None)
             if callable(seek):
                 try:
                     result = seek(0)
                     if isawaitable(result):
                         await result
-                except Exception:
+                    logger.debug(f"[stream_upload] Seek(0) uspešen za: {filename}")
+                except Exception as e:
+                    logger.warning(f"[stream_upload] Seek(0) failed za {filename}, poskušam file.seek: {e}")
                     file_obj = getattr(upload, "file", None)
                     if file_obj and hasattr(file_obj, "seek"):
                         file_obj.seek(0)
 
             suffix = _detect_suffix(upload)
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                chunks_read = 0
                 while True:
                     chunk = await upload.read(chunk_size)
                     if not chunk:
                         break
+                    chunks_read += 1
                     total_size += len(chunk)
                     tmp.write(chunk)
                 temp_path = Path(tmp.name)
+                logger.info(f"[stream_upload] Prebranih {chunks_read} chunkov, skupaj {total_size} bytov za: {filename}")
         else:
             # Sinhrono delo z io.BytesIO, Path, ali str
             temp_path, total_size = _copy_sync_to_tempfile(upload, chunk_size)

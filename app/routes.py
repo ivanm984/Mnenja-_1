@@ -321,6 +321,16 @@ async def extract_data(
     for upload in pdf_files:
         try:
             await validate_pdf_upload(upload, MAX_PDF_SIZE_BYTES)
+            # Eksplicitno resetiraj pozicijo po validaciji
+            try:
+                await upload.seek(0)
+                logger.debug(f"[{session_id}] Validacija in reset uspešen za: {upload.filename}")
+            except Exception as seek_error:
+                logger.warning(f"[{session_id}] Seek(0) po validaciji ni uspel za {upload.filename}: {seek_error}")
+                # Poskusi še z direktnim dostopom do file objekta
+                if hasattr(upload, 'file') and hasattr(upload.file, 'seek'):
+                    upload.file.seek(0)
+                    logger.debug(f"[{session_id}] Alternativen seek(0) uspešen za: {upload.filename}")
         except ValueError as e:
             logger.error(f"[{session_id}] PDF validacija neuspešna za {upload.filename}: {e}")
             raise HTTPException(
