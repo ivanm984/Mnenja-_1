@@ -1287,7 +1287,10 @@
                     // Klic API-ja za začetek procesiranja
                     console.log('[Upload] Pošiljam zahtevo za ekstrakcijo podatkov');
                     const response = await fetch('/extract-data', { method: 'POST', body: formData });
-                    if (!response.ok) throw new Error('API napaka');
+                    if (!response.ok) {
+                        const errorData = await response.json().catch(() => ({ detail: 'API napaka' }));
+                        throw new Error(errorData.detail || 'API napaka');
+                    }
 
                     const initData = await response.json();
                     this.sessionId = initData.session_id;
@@ -2287,7 +2290,8 @@
                         const response = await fetch(`/extract-data/result/${sessionId}`);
                         if (!response.ok) {
                             console.error('[Polling] Napaka pri pridobivanju rezultata:', response.status);
-                            throw new Error('Napaka pri pridobivanju rezultata');
+                            const errorData = await response.json().catch(() => ({ detail: 'Napaka pri pridobivanju rezultata' }));
+                            throw new Error(errorData.detail || 'Napaka pri pridobivanju rezultata');
                         }
 
                         const result = await response.json();

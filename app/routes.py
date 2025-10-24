@@ -7,10 +7,11 @@ import json
 import logging
 import re
 import secrets
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from fastapi import (APIRouter, BackgroundTasks, Depends, File, Form,
                    HTTPException, UploadFile)
@@ -162,7 +163,7 @@ async def remove_saved_session(session_id: str):
 
 async def _process_extract_data_background(
     session_id: str,
-    pdf_files: List[UploadFile],
+    temp_files_data: List[Tuple[Path, str, str]],  # (temp_path, filename, content_type)
     page_overrides: Dict[str, Any],
     municipality_slug: Optional[str],
 ):
@@ -171,7 +172,7 @@ async def _process_extract_data_background(
 
     Args:
         session_id: ID seje
-        pdf_files: Seznam PDF datotek
+        temp_files_data: Seznam začasnih datotek (pot, ime, content_type)
         page_overrides: Metapodatki za pretvorbo strani
         municipality_slug: Oznaka občine
     """
@@ -182,12 +183,12 @@ async def _process_extract_data_background(
         await cache_manager.store_session_data(f"progress:{session_id}", {
             "step": 1,
             "total_steps": 4,
-            "message": f"Ekstrakcija besedila iz {len(pdf_files)} PDF dokumentov...",
+            "message": f"Ekstrakcija besedila iz {len(temp_files_data)} PDF dokumentov...",
             "percentage": 10
         })
 
-        project_text, all_images, files_manifest = await PDFService.process_pdf_files(
-            pdf_files, page_overrides, session_id
+        project_text, all_images, files_manifest = await PDFService.process_pdf_files_from_paths(
+            temp_files_data, page_overrides, session_id
         )
 
         # Shranjevanje slik
@@ -282,6 +283,15 @@ async def _process_extract_data_background(
             "completed": True,
             "error": True
         })
+    finally:
+        # Počisti začasne datoteke
+        for temp_path, _, _ in temp_files_data:
+            try:
+                if temp_path.exists():
+                    temp_path.unlink()
+                    logger.debug(f"[{session_id}] Počiščena začasna datoteka: {temp_path}")
+            except Exception as cleanup_error:
+                logger.warning(f"[{session_id}] Napaka pri čiščenju {temp_path}: {cleanup_error}")
 
 
 @router.post("/extract-data")
@@ -317,17 +327,73 @@ async def extract_data(
     logger.info(f"[{session_id}] Začetek /extract-data z {len(pdf_files)} datotekami")
 
     # VARNOSTNO: Validiraj vse PDF datoteke pred procesiranjem
-    logger.info(f"[{session_id}] Začenjam validacijo {len(pdf_files)} PDF datotek...")
-    for upload in pdf_files:
-        try:
-            await validate_pdf_upload(upload, MAX_PDF_SIZE_BYTES)
-        except ValueError as e:
-            logger.error(f"[{session_id}] PDF validacija neuspešna za {upload.filename}: {e}")
-            raise HTTPException(
-                status_code=400,
-                detail=f"Datoteka '{upload.filename}' ni veljavna: {str(e)}"
-            )
-    logger.info(f"[{session_id}] ✓ Vse PDF datoteke so veljavne")
+    # POMEMBNO: Shrani datoteke v začasne datoteke PRED ozadno nalogo,
+    # ker UploadFile objekti niso več uporabni po zaključku HTTP zahteve
+    logger.info(f"[{session_id}] Začenjam validacijo in shranjevanje {len(pdf_files)} PDF datotek...")
+    
+    temp_files_data = []  # Seznam (temp_path, filename, content_type)
+    
+    try:
+        for upload in pdf_files:
+            try:
+                await validate_pdf_upload(upload, MAX_PDF_SIZE_BYTES)
+                await upload.seek(0)
+                
+                # Preberi datoteko v pomnilnik in shrani v začasno datoteko
+                filename = upload.filename or "dokument.pdf"
+                content = await upload.read()
+                
+                if not content:
+                    logger.warning(f"[{session_id}] Datoteka {filename} je prazna po branju")
+                    raise ValueError(f"Datoteka '{filename}' je prazna")
+                
+                # Shrani v začasno datoteko za ozadno nalogo
+                suffix = Path(filename).suffix or ".pdf"
+                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+                temp_file.write(content)
+                temp_file.flush()
+                temp_file.close()
+                
+                temp_files_data.append((
+                    Path(temp_file.name),
+                    filename,
+                    upload.content_type or "application/pdf"
+                ))
+                
+                logger.info(
+                    f"[{session_id}] ✓ {filename}: validiran in shranjen "
+                    f"({len(content) / (1024*1024):.2f}MB)"
+                )
+                
+            except ValueError as e:
+                # Počisti že shranjene začasne datoteke v primeru napake
+                for temp_path, _, _ in temp_files_data:
+                    try:
+                        temp_path.unlink()
+                    except Exception:
+                        pass
+                logger.error(f"[{session_id}] PDF validacija neuspešna za {upload.filename}: {e}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Datoteka '{upload.filename}' ni veljavna: {str(e)}"
+                )
+        
+        logger.info(f"[{session_id}] ✓ Vse PDF datoteke so veljavne in shranjene")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Počisti začasne datoteke v primeru nepričakovane napake
+        for temp_path, _, _ in temp_files_data:
+            try:
+                temp_path.unlink()
+            except Exception:
+                pass
+        logger.error(f"[{session_id}] Nepričakovana napaka pri pripravi datotek: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Napaka pri pripravi datotek: {str(e)}"
+        )
 
     # Shrani začetni progress v cache za frontend polling
     progress_data = {
@@ -342,11 +408,11 @@ async def extract_data(
     # Parsiranje metapodatkov
     page_overrides = _parse_files_metadata(files_meta_json)
 
-    # Začni procesiranje v ozadju
+    # Začni procesiranje v ozadju z začasnimi datotekami
     background_tasks.add_task(
         _process_extract_data_background,
         session_id,
-        pdf_files,
+        temp_files_data,  # Namesto pdf_files pošljemo temp_files_data
         page_overrides,
         municipality_slug
     )
