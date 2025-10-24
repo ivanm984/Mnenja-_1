@@ -148,6 +148,9 @@ async def stream_upload_to_tempfile(
     upload: Union[UploadFile, str, Path, BinaryIO],
     chunk_size: int = 1024 * 1024,
 ) -> AsyncIterator[Tuple[Path | None, int]]:
+    import logging
+    logger = logging.getLogger(__name__)
+    
     temp_path: Path | None = None
     total_size = 0
 
@@ -155,26 +158,41 @@ async def stream_upload_to_tempfile(
     try:
         if isinstance(upload, UploadFile):
             # Asinhrono delo z UploadFile
+            filename = getattr(upload, "filename", "unknown")
+            logger.debug(f"Začenjam branje UploadFile: {filename}")
+            
             seek = getattr(upload, "seek", None)
             if callable(seek):
                 try:
                     result = seek(0)
                     if isawaitable(result):
                         await result
-                except Exception:
+                    logger.debug(f"[{filename}] Uspešno seek(0) na upload objektu")
+                except Exception as e:
+                    logger.warning(f"[{filename}] Seek na upload objektu ni uspel: {e}, poskušam na file objektu")
                     file_obj = getattr(upload, "file", None)
                     if file_obj and hasattr(file_obj, "seek"):
-                        file_obj.seek(0)
+                        try:
+                            file_obj.seek(0)
+                            logger.debug(f"[{filename}] Uspešno seek(0) na file objektu")
+                        except Exception as e2:
+                            logger.warning(f"[{filename}] Seek na file objektu tudi ni uspel: {e2}")
 
             suffix = _detect_suffix(upload)
             with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                chunk_count = 0
                 while True:
                     chunk = await upload.read(chunk_size)
                     if not chunk:
                         break
                     total_size += len(chunk)
                     tmp.write(chunk)
+                    chunk_count += 1
                 temp_path = Path(tmp.name)
+                logger.debug(f"[{filename}] Prebral {chunk_count} chunkov, skupaj {total_size} bytov")
+                
+                if total_size == 0:
+                    logger.warning(f"[{filename}] OPOZORILO: Datoteka je prazna (0 bytov)!")
         else:
             # Sinhrono delo z io.BytesIO, Path, ali str
             temp_path, total_size = _copy_sync_to_tempfile(upload, chunk_size)
